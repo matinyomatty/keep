@@ -1,0 +1,439 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<link rel="icon" type="image/png" href="icon-192.png">
+<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}[hidden]{display:none!important}img{max-width:100%}</style>
+</head>
+<body>
+<title>Keep Sign In</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="theme-color" content="#0b0d12">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=DM+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: split screen. Form on white (left), Keep brand panel in ink (right). Phone: form only.
+   Single deliberate look (white form + ink panel), the same in light and dark. */
+:root{
+  color-scheme:light;
+  --ink:#0b0d12; --ink2:#161b27; --blue:#1a56db; --blue-dk:#1546b3; --yellow:#ffc72c;
+  --paper:#ffffff; --text:#0b0d12; --muted:#5f6878; --line:#d9dee7; --field:#ffffff; --hover:#f4f6fa;
+  --red:#c81e1e; --red-bg:#fdf0f0; --green:#0f7a3d; --green-bg:#ecf8f1;
+  --f-logo:"Syne","Segoe UI",system-ui,sans-serif;
+  --f-body:"DM Sans","Segoe UI",system-ui,sans-serif;
+  --f-mono:"DM Mono",ui-monospace,Menlo,monospace;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--paper);color:var(--text);font:400 15px/1.5 var(--f-body);-webkit-font-smoothing:antialiased}
+button{font-family:inherit;cursor:pointer}
+:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+h1,h2{margin:0;text-wrap:balance}
+
+.page{min-height:100%;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+
+/* ── Left: form side ── */
+.side{display:flex;flex-direction:column;min-width:0;padding-block:22px;
+  padding-left:max(24px,env(safe-area-inset-left,0px));padding-right:max(24px,env(safe-area-inset-right,0px))}
+.top{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.logo{display:flex;align-items:center;gap:9px;text-decoration:none;color:var(--ink)}
+.logo .k{width:30px;height:30px;border-radius:7px;background:var(--ink);display:grid;place-items:center;color:var(--yellow);font:800 17px/1 var(--f-logo)}
+.logo .w{font:800 26px/1 var(--f-logo);letter-spacing:-.02em}
+.logo .w i{font-style:normal;color:var(--blue)}
+.trial{border:1px solid var(--line);background:var(--paper);color:var(--ink);font:600 13.5px/1 var(--f-body);padding:10px 14px;border-radius:999px;white-space:nowrap}
+.trial:hover{border-color:var(--ink)}
+
+.center{flex:1;display:flex;align-items:center;justify-content:center;padding-block:40px}
+.box{width:100%;max-width:380px}
+.box h1{font:700 28px/1.15 var(--f-body);letter-spacing:-.02em}
+.box .sub{margin:8px 0 28px;color:var(--muted)}
+
+form{display:flex;flex-direction:column;gap:18px}
+.field{display:flex;flex-direction:column;gap:7px}
+.lab{display:flex;justify-content:space-between;align-items:baseline;gap:10px}
+label{font-weight:600;font-size:14px}
+.tlink{border:0;background:none;padding:0;color:var(--blue);font:500 13.5px var(--f-body)}
+.tlink:hover{text-decoration:underline}
+input,select{width:100%;height:48px;padding:0 14px;font:400 16px var(--f-body);color:var(--text);background:var(--field);border:1px solid var(--line);border-radius:8px;transition:border-color .15s,box-shadow .15s}
+input:hover,select:hover{border-color:#b9c1ce}
+input:focus,select:focus{outline:none;border-color:var(--blue);box-shadow:0 0 0 3px rgba(26,86,219,.15)}
+input::placeholder{color:#9aa2b0}
+.pw{position:relative}
+.pw input{padding-right:64px}
+.eye{position:absolute;right:4px;top:4px;height:40px;border:0;background:none;color:var(--muted);font:500 13px var(--f-body);padding:0 12px;border-radius:6px}
+.eye:hover{color:var(--ink)}
+input.pin{font-family:var(--f-mono);letter-spacing:.35em}
+.switch{font-size:13.5px;color:var(--muted)}
+.btn{height:48px;border:0;border-radius:8px;background:var(--blue);color:#fff;font:600 15.5px var(--f-body);width:100%;transition:background .15s}
+.btn:hover{background:var(--blue-dk)}
+.btn:disabled{opacity:.65;cursor:wait}
+.btn.dark{background:var(--ink)}
+.btn.dark:hover{background:var(--ink2)}
+.btn.plain{background:var(--paper);color:var(--ink);border:1px solid var(--line)}
+.btn.plain:hover{background:var(--hover)}
+.msg{font-size:13.5px;padding:10px 12px;border-radius:8px;background:var(--red-bg);color:var(--red)}
+.msg.good{background:var(--green-bg);color:var(--green)}
+.msg:empty{display:none}
+.below{margin-top:26px;font-size:13.5px;color:var(--muted)}
+
+.who{display:flex;flex-direction:column;gap:14px}
+.acct{display:flex;align-items:center;gap:12px;border:1px solid var(--line);border-radius:10px;padding:12px 14px}
+.av{width:40px;height:40px;border-radius:50%;background:var(--ink);color:var(--yellow);display:grid;place-items:center;font:800 16px var(--f-logo);flex:none}
+.acct b{display:block;font-weight:600;overflow-wrap:anywhere}
+.acct span{font-size:13px;color:var(--muted)}
+
+.foot{display:flex;flex-wrap:wrap;justify-content:space-between;gap:6px 16px;font-size:12.5px;color:var(--muted)}
+.foot a{color:inherit;text-decoration:none}
+
+/* ── Right: brand panel ── */
+.brand{background:var(--ink);color:#fff;position:relative;overflow:hidden;display:flex;flex-direction:column;justify-content:center;
+  padding-block:48px;padding-left:max(48px,env(safe-area-inset-left,0px));padding-right:max(48px,env(safe-area-inset-right,0px))}
+.brand::before{content:"";position:absolute;right:-120px;top:-120px;width:420px;height:420px;border-radius:50%;background:var(--blue);opacity:.9}
+.brand::after{content:"";position:absolute;right:120px;bottom:-60px;width:180px;height:180px;background:var(--yellow);border-radius:24px;transform:rotate(18deg)}
+.stage{position:relative;z-index:1;max-width:440px;display:flex;flex-direction:column;gap:30px}
+.brand h2{font:700 clamp(26px,2.6vw,34px)/1.15 var(--f-body);letter-spacing:-.02em;color:#fff}
+.brand h2 em{font-style:normal;color:var(--yellow)}
+.receipt{background:#fff;color:var(--ink);width:280px;max-width:100%;padding:20px 20px 24px;font:400 12.5px/1.75 var(--f-mono);font-variant-numeric:tabular-nums;
+  box-shadow:0 30px 60px -20px rgba(0,0,0,.6);transform:rotate(-2.5deg);
+  -webkit-mask:linear-gradient(#000,#000) top/100% calc(100% - 8px) no-repeat,radial-gradient(circle 5px at 8px 100%,transparent 98%,#000) bottom left/16px 8px repeat-x;
+          mask:linear-gradient(#000,#000) top/100% calc(100% - 8px) no-repeat,radial-gradient(circle 5px at 8px 100%,transparent 98%,#000) bottom left/16px 8px repeat-x}
+.receipt .hd{text-align:center;font-weight:500;letter-spacing:.2em;margin-bottom:2px}
+.receipt .sm{text-align:center;color:#6b7280;font-size:11px;margin-bottom:10px}
+.receipt .r{display:flex;justify-content:space-between;gap:10px}
+.receipt .r span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.receipt .rule{border-top:1px dashed #b8bec9;margin:8px 0}
+.receipt .tot{font-weight:500;font-size:14px}
+.receipt .pay{color:#6b7280;font-size:11.5px}
+.receipt .thx{text-align:center;margin-top:10px;font-size:11px;color:#6b7280}
+.points{display:flex;flex-wrap:wrap;gap:8px 22px;color:#aab2c2;font-size:13.5px}
+.points span::before{content:"";display:inline-block;width:6px;height:6px;background:var(--yellow);margin-right:8px;vertical-align:2px}
+
+/* ── Trial sheet ── */
+.veil{position:fixed;inset:0;background:rgba(11,13,18,.55);z-index:20;display:flex;align-items:center;justify-content:center;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:16px}
+.sheet{background:var(--paper);width:100%;max-width:440px;border-radius:14px;padding:26px;max-height:100%;overflow:auto}
+.sheet .hd{display:flex;justify-content:space-between;align-items:start;gap:12px;margin-bottom:6px}
+.sheet h2{font:700 21px/1.2 var(--f-body);letter-spacing:-.01em}
+.x{border:0;background:none;width:36px;height:36px;margin:-6px -8px 0 0;border-radius:8px;color:var(--muted);font-size:22px;line-height:1}
+.x:hover{background:var(--hover);color:var(--ink)}
+.sheet .sub{margin:0 0 20px;color:var(--muted);font-size:14px}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.contact{font-family:var(--f-mono);font-size:13.5px;user-select:all;color:var(--ink)}
+.sent{display:flex;flex-direction:column;gap:14px}
+.sent p{margin:0;color:var(--muted)}
+a.btn{display:grid;place-items:center;text-decoration:none}
+
+@media (max-width:900px){
+  .page{grid-template-columns:1fr}
+  .brand{display:none}
+}
+@media (max-width:420px){
+  .two{grid-template-columns:1fr}
+  .side{padding-left:max(18px,env(safe-area-inset-left,0px));padding-right:max(18px,env(safe-area-inset-right,0px))}
+  .trial{padding:9px 12px;font-size:13px}
+  .center{align-items:flex-start;padding-top:48px}
+  .sheet{padding:22px 18px}
+}
+</style>
+
+<div class="page">
+  <div class="side">
+    <header class="top">
+      <a class="logo" href="#" aria-label="Keep"><span class="w">Keep<i>.</i></span></a>
+      <button class="trial" type="button" id="open-trial">Request free trial</button>
+    </header>
+
+    <div class="center">
+      <div class="box">
+        <!-- Sign-in form -->
+        <div id="v-form">
+          <h1 style="margin-bottom:28px">Sign in to Keep</h1>
+          <form id="f-signin" novalidate>
+            <div class="field">
+              <label for="si-id">Phone number or email</label>
+              <input id="si-id" type="text" inputmode="email" autocomplete="username" autocapitalize="off" spellcheck="false" placeholder="0712 345 678">
+            </div>
+            <div class="field">
+              <div class="lab"><label for="si-secret" id="secret-label">PIN</label><button type="button" class="tlink" id="forgot">Forgot PIN?</button></div>
+              <div class="pw">
+                <input id="si-secret" type="password" class="pin" inputmode="numeric" pattern="[0-9]*" maxlength="12" autocomplete="current-password">
+                <button type="button" class="eye" id="reveal" aria-controls="si-secret" aria-pressed="false">Show</button>
+              </div>
+            </div>
+            <p class="msg" id="si-msg" role="alert"></p>
+            <button class="btn" type="submit" id="si-btn">Sign in</button>
+            <p class="switch"><button type="button" class="tlink" id="switch">Use a password instead</button></p>
+          </form>
+          <p class="below">Added by your shop owner? Use the phone number and PIN they gave you.</p>
+        </div>
+
+        <!-- Already signed in -->
+        <div id="v-who" class="who" hidden>
+          <h1 id="who-title">Welcome back</h1>
+          <p class="sub" style="margin:0 0 6px" id="who-sub">Continue where you left off.</p>
+          <div class="acct"><span class="av" id="who-av">K</span><div><b id="who-name"></b><span id="who-dest"></span></div></div>
+          <p class="msg" id="who-msg" role="alert"></p>
+          <button class="btn" type="button" id="who-go">Continue</button>
+          <button class="btn plain" type="button" id="who-out">Use another account</button>
+        </div>
+      </div>
+    </div>
+
+    <footer class="foot"><span>© 2026 Keep · keep.co.tz</span><span id="mode">Support +255 740 116 251</span></footer>
+  </div>
+
+  <aside class="brand" aria-label="About Keep">
+    <div class="stage">
+      <h2>The point of sale for shops <em>across Tanzania.</em></h2>
+      <div class="receipt" aria-label="Example receipt">
+        <div class="hd">YOUR SHOP</div>
+        <div class="sm">Sat 18 Oct 2026 · 14:32</div>
+        <div class="r"><span>Bosch drill 13mm × 1</span><span>185,000</span></div>
+        <div class="r"><span>Drill bits set × 1</span><span>32,000</span></div>
+        <div class="r"><span>Extension cable 5m × 2</span><span>44,000</span></div>
+        <div class="rule"></div>
+        <div class="r tot"><span>TOTAL TZS</span><span>261,000</span></div>
+        <div class="r pay"><span>Lipa kwa Simu</span><span>261,000</span></div>
+        <div class="thx">Asante kwa kununua</div>
+      </div>
+      <div class="points"><span>Works offline</span><span>Daily cash-up</span><span>Check your shop from anywhere</span></div>
+    </div>
+  </aside>
+</div>
+
+<!-- Request free trial -->
+<div class="veil" id="trial" hidden role="dialog" aria-modal="true" aria-labelledby="t-title">
+  <div class="sheet">
+    <div class="hd"><h2 id="t-title">Request free trial</h2><button class="x" type="button" id="close-trial" aria-label="Close">×</button></div>
+    <div id="t-form-wrap">
+      <p class="sub">We'll set up Keep for your shop and contact you on WhatsApp.</p>
+      <form id="f-trial" novalidate>
+        <div class="two">
+          <div class="field"><label for="n-name">Your name</label><input id="n-name" autocomplete="name"></div>
+          <div class="field"><label for="n-phone">WhatsApp number</label><input id="n-phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="07XX XXX XXX"></div>
+        </div>
+        <div class="field"><label for="n-biz">Business name</label><input id="n-biz" autocomplete="organization"></div>
+        <div class="two">
+          <div class="field"><label for="n-type">Type of business</label>
+            <select id="n-type"><option>Shop / minimarket</option><option>Hardware &amp; tools</option><option>Electronics</option><option>Barbershop / salon</option><option>Other</option></select></div>
+          <div class="field"><label for="n-town">Town</label><input id="n-town" placeholder="Zanzibar"></div>
+        </div>
+        <p class="msg" id="n-msg" role="alert"></p>
+        <button class="btn dark" type="submit">Continue</button>
+      </form>
+    </div>
+    <div class="sent" id="t-sent" hidden>
+      <p>Tap below to send your request to Keep on WhatsApp. We reply within one working day.</p>
+      <a class="btn" id="wa-link" href="https://wa.me/255740116251" target="_blank" rel="noopener">Send on WhatsApp</a>
+      <p>Or contact us directly at <span class="contact">+255 740 116 251</span> or <span class="contact">info@keep.co.tz</span></p>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  // ── Settings ─────────────────────────────────────────────
+  const VENDOR_EMAIL = 'maternusadriano@gmail.com';     // Keep HQ owner
+  const SELLER_DOMAIN = 'tenants.matinyopos.app';       // hidden seller logins
+  // Where each kind of account goes after signing in (same website as this page)
+  const ROUTES = {
+    hq:         { name: 'Keep HQ',  path: 'hq/' },
+    shop:       { name: 'your shop', path: 'app/' },
+    barbershop: { name: 'your barbershop', path: 'barber/' }
+  };
+  const firebaseConfig = {
+    apiKey: "AIzaSyCaDZILjLrWg2VGvFElzU08Je-kJTGHKiU",
+    authDomain: "matinyopos.firebaseapp.com",
+    projectId: "matinyopos",
+    storageBucket: "matinyopos.firebasestorage.app",
+    messagingSenderId: "891386548810",
+    appId: "1:891386548810:web:26f1ef407a053a3f6f4cb3"
+  };
+  const LIVE = ['keep.co.tz', 'www.keep.co.tz', 'matinyomatty.github.io', 'localhost', '127.0.0.1'].includes(location.hostname);
+
+  // ── Helpers ──────────────────────────────────────────────
+  const $ = s => document.getElementById(s);
+  const store = { get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }, set(k, v) { try { localStorage.setItem(k, v); } catch (e) {} } };
+  function normPhone(v) {
+    let d = String(v || '').replace(/\D/g, '');
+    if (d.startsWith('0') && d.length === 10) d = '255' + d.slice(1);
+    else if (d.length === 9 && /^[67]/.test(d)) d = '255' + d;
+    return d;
+  }
+  const normId = v => { v = String(v || '').trim().toLowerCase(); return v.includes('@') ? v : normPhone(v); };
+  const isSeller = e => (e || '').toLowerCase().endsWith('@' + SELLER_DOMAIN);
+  function say(el, text, good) { el.textContent = text || ''; el.classList.toggle('good', !!good); }
+  if (!LIVE) $('mode').textContent = 'Preview · sign-in is simulated';
+  // A message handed back by HQ or the till (e.g. "account switched off")
+  try { const m = sessionStorage.getItem('keep.msg'); if (m) { say($('si-msg'), m); sessionStorage.removeItem('keep.msg'); } } catch (e) {}
+
+  // ── PIN or password ──────────────────────────────────────
+  const secret = $('si-secret'), reveal = $('reveal'), idf = $('si-id');
+  let usePin = true;
+  function setMethod(pin) {
+    usePin = pin;
+    secret.value = ''; secret.type = 'password';
+    secret.classList.toggle('pin', pin);
+    secret.setAttribute('inputmode', pin ? 'numeric' : 'text');
+    if (pin) { secret.setAttribute('pattern', '[0-9]*'); secret.maxLength = 12; } else { secret.removeAttribute('pattern'); secret.removeAttribute('maxlength'); }
+    reveal.textContent = 'Show'; reveal.setAttribute('aria-pressed', 'false');
+    $('secret-label').textContent = pin ? 'PIN' : 'Password';
+    $('forgot').textContent = pin ? 'Forgot PIN?' : 'Forgot password?';
+    $('switch').textContent = pin ? 'Use a password instead' : 'Use a PIN instead';
+    say($('si-msg'), '');
+    store.set('keep.method', pin ? 'pin' : 'password');
+  }
+  $('switch').onclick = () => { setMethod(!usePin); secret.focus(); };
+  secret.addEventListener('input', () => { if (usePin) { const v = secret.value.replace(/\D/g, '').slice(0, 12); if (v !== secret.value) secret.value = v; } });
+  reveal.onclick = () => { const show = secret.type === 'password'; secret.type = show ? 'text' : 'password'; reveal.textContent = show ? 'Hide' : 'Show'; reveal.setAttribute('aria-pressed', show); };
+  if (store.get('keep.method') === 'password') setMethod(false);
+  const lastId = store.get('keep.lastId'); if (lastId) idf.value = lastId;
+  idf.addEventListener('input', () => { idf.setAttribute('inputmode', /^[+\d][\d\s]*$/.test(idf.value) ? 'tel' : 'email'); });
+
+  // ── Firebase (live site only) ────────────────────────────
+  let auth = null, db = null, booting = null;
+  function loadScript(src) { return new Promise((ok, no) => { const s = document.createElement('script'); s.src = src; s.onload = ok; s.onerror = () => no(new Error('Could not reach Keep. Check your internet and reload.')); document.head.appendChild(s); }); }
+  function startFirebase() {
+    if (!booting) booting = (async () => {
+      const v = 'https://www.gstatic.com/firebasejs/9.23.0/';
+      await loadScript(v + 'firebase-app-compat.js');
+      await Promise.all([loadScript(v + 'firebase-auth-compat.js'), loadScript(v + 'firebase-firestore-compat.js')]);
+      firebase.initializeApp(firebaseConfig);
+      auth = firebase.auth(); db = firebase.firestore();
+    })();
+    return booting;
+  }
+  const route = k => ({ name: ROUTES[k].name, url: ROUTES[k].path });
+
+  // Decide where this account belongs
+  async function destinationFor(user) {
+    if ((user.email || '').toLowerCase() === VENDOR_EMAIL) return route('hq');
+    const link = await db.collection('users').doc(user.uid).get();
+    if (!link.exists || !link.data().shop) throw new Error('This account is not linked to a shop. Contact Keep support on +255 740 116 251.');
+    let type = 'shop';
+    try { const t = await db.collection('tenants').doc(link.data().shop).get(); if (t.exists) type = String(t.data().type || t.data().businessType || 'shop').toLowerCase(); } catch (e) {}
+    const r = ROUTES[type] || ROUTES.shop;
+    if (!r.path) throw new Error('Keep for barbershops opens soon. Contact Keep support on +255 740 116 251.');
+    return { name: r.name, url: r.path };
+  }
+
+  async function emailFor(id) {
+    if (id.includes('@')) return id;
+    if (id.length < 12) throw new Error('Enter a valid phone number, like 0712 345 678.');
+    const snap = await db.collection('logins').doc(id).get();
+    if (!snap.exists) throw new Error('No Keep account uses that phone number.');
+    return snap.data().email;
+  }
+
+  function friendly(e) {
+    const c = (e && e.code) || '';
+    if (c.includes('too-many')) return 'Too many tries. Wait a few minutes and try again.';
+    if (c.includes('network')) return 'No internet connection. Check it and try again.';
+    if (c.includes('user-disabled')) return 'This account has been switched off. Contact your shop owner.';
+    if (c.startsWith('auth/')) return 'That phone number or ' + (usePin ? 'PIN' : 'password') + " doesn't match. Try again.";
+    return (e && e.message) || 'Could not sign in. Try again.';
+  }
+
+  // ── Signed-in view ───────────────────────────────────────
+  let pending = null;
+  function showWho(label, dest, go) {
+    pending = dest;
+    $('v-form').hidden = true; $('v-who').hidden = false;
+    $('who-av').textContent = (label || 'K').trim().charAt(0).toUpperCase();
+    $('who-name').textContent = label;
+    $('who-dest').textContent = 'Opens ' + dest.name;
+    $('who-go').textContent = 'Continue to ' + dest.name;
+    say($('who-msg'), '');
+    if (go) open();
+  }
+  function open() {
+    if (!pending) return;
+    $('who-title').textContent = 'Signing you in';
+    $('who-go').disabled = true; $('who-go').textContent = 'Opening ' + pending.name + '…';
+    if (LIVE) location.assign(pending.url);
+    else setTimeout(() => { $('who-go').disabled = false; $('who-go').textContent = 'Continue to ' + pending.name; $('who-title').textContent = 'Welcome back'; say($('who-msg'), 'Preview: on keep.co.tz this opens ' + pending.name + ' at ' + pending.url, true); }, 700);
+  }
+  $('who-go').onclick = open;
+  $('who-out').onclick = async () => { if (auth) await auth.signOut().catch(() => {}); secret.value = ''; $('v-who').hidden = true; $('v-form').hidden = false; idf.focus(); };
+
+  // ── Sign in ──────────────────────────────────────────────
+  $('f-signin').addEventListener('submit', async e => {
+    e.preventDefault();
+    const msg = $('si-msg'), btn = $('si-btn');
+    const id = normId(idf.value), pass = secret.value;
+    if (!id) { say(msg, 'Enter your phone number or email.'); idf.focus(); return; }
+    if (usePin && !/^\d{6,12}$/.test(pass)) { say(msg, 'Your PIN is 6 to 12 digits.'); secret.focus(); return; }
+    if (!usePin && !pass) { say(msg, 'Enter your password.'); secret.focus(); return; }
+    say(msg, ''); btn.disabled = true; btn.textContent = 'Signing in…';
+    try {
+      if (!LIVE) { await new Promise(r => setTimeout(r, 500)); showWho(idf.value.trim(), previewRoute(id), true); return; }
+      if (!navigator.onLine) throw new Error('Signing in needs internet. Connect and try again.');
+      await startFirebase();
+      const cred = await auth.signInWithEmailAndPassword(await emailFor(id), pass);
+      store.set('keep.lastId', idf.value.trim());
+      try { showWho(idf.value.trim(), await destinationFor(cred.user), true); }
+      catch (err) { await auth.signOut().catch(() => {}); throw err; }
+    } catch (err) { say(msg, friendly(err)); secret.value = ''; }
+    finally { btn.disabled = false; btn.textContent = 'Sign in'; }
+  });
+
+  // Preview only: try 'maternusadriano@gmail.com' for HQ, any phone for a shop
+  function previewRoute(id) {
+    if (id === VENDOR_EMAIL) return route('hq');
+    if (id.includes('barber')) return { name: 'your barbershop', url: 'barber/' };
+    return route('shop');
+  }
+
+  // ── Forgot PIN / password ────────────────────────────────
+  $('forgot').onclick = async () => {
+    const msg = $('si-msg'), id = normId(idf.value);
+    if (!id) { say(msg, 'Type your phone number or email first.'); idf.focus(); return; }
+    if (!LIVE) { say(msg, 'Preview: on keep.co.tz this emails a reset link.', true); return; }
+    try {
+      await startFirebase();
+      const email = await emailFor(id);
+      if (isSeller(email)) { say(msg, 'Ask your shop owner to reset your PIN from Team on the till.'); return; }
+      await auth.sendPasswordResetEmail(email);
+      say(msg, 'We sent a reset link to your email. Check spam too.', true);
+    } catch (err) { say(msg, friendly(err)); }
+  };
+
+  // ── Already signed in on this device? ────────────────────
+  if (LIVE) {
+    startFirebase().then(() => {
+      const off = auth.onAuthStateChanged(async user => {
+        off();
+        if (!user) return;
+        try { showWho(store.get('keep.lastId') || user.email, await destinationFor(user), false); }
+        catch (err) { await auth.signOut().catch(() => {}); say($('si-msg'), err.message); }
+      });
+    }).catch(err => say($('si-msg'), err.message));
+  }
+
+  // ── Request free trial ───────────────────────────────────
+  const sheet = $('trial');
+  function openTrial() { $('t-form-wrap').hidden = false; $('t-sent').hidden = true; sheet.hidden = false; setTimeout(() => $('n-name').focus(), 50); }
+  function closeTrial() { sheet.hidden = true; $('open-trial').focus(); }
+  $('open-trial').onclick = openTrial;
+  $('close-trial').onclick = closeTrial;
+  sheet.addEventListener('click', e => { if (e.target === sheet) closeTrial(); });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && !sheet.hidden) closeTrial(); });
+  if (['#trial', '#free-trial'].includes(location.hash)) openTrial();
+  $('f-trial').addEventListener('submit', e => {
+    e.preventDefault();
+    const msg = $('n-msg'), name = $('n-name').value.trim(), phone = $('n-phone').value.trim(), biz = $('n-biz').value.trim();
+    if (!name) { say(msg, 'Enter your name.'); $('n-name').focus(); return; }
+    if (!/^\d{9,13}$/.test(phone.replace(/\D/g, ''))) { say(msg, 'Enter your WhatsApp number, like 0712 345 678.'); $('n-phone').focus(); return; }
+    if (!biz) { say(msg, 'Enter your business name.'); $('n-biz').focus(); return; }
+    say(msg, '');
+    const text = `Hello Keep, I'd like a free trial.\nName: ${name}\nWhatsApp: ${phone}\nBusiness: ${biz}\nType: ${$('n-type').value}\nTown: ${$('n-town').value.trim() || '-'}`;
+    $('wa-link').href = 'https://wa.me/255740116251?text=' + encodeURIComponent(text);
+    $('t-form-wrap').hidden = true; $('t-sent').hidden = false;
+  });
+})();
+</script>
+
+</body>
+</html>
