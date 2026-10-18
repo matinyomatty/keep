@@ -32,7 +32,9 @@ button{font-family:inherit;cursor:pointer}
 :focus-visible{outline:2px solid var(--blue);outline-offset:2px}
 h1,h2{margin:0;text-wrap:balance}
 
-.page{min-height:100%;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+.page{min-height:100vh;min-height:100dvh;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+/* Computers: exactly one screen, no scrolling */
+@media (min-width:901px) and (min-height:560px){html,body{overflow:hidden}.page{height:100vh;height:100dvh}.side,.brand{min-height:0}}
 
 /* ── Left: form side ── */
 .side{display:flex;flex-direction:column;min-width:0;padding-block:22px;
@@ -45,12 +47,12 @@ h1,h2{margin:0;text-wrap:balance}
 .trial{border:1px solid var(--line);background:var(--paper);color:var(--ink);font:600 13.5px/1 var(--f-body);padding:10px 14px;border-radius:999px;white-space:nowrap}
 .trial:hover{border-color:var(--ink)}
 
-.center{flex:1;display:flex;align-items:center;justify-content:center;padding-block:40px}
+.center{flex:1;min-height:0;display:flex;align-items:center;justify-content:center;padding-block:16px}
 .box{width:100%;max-width:380px}
 .box h1{font:700 28px/1.15 var(--f-body);letter-spacing:-.02em}
-.box .sub{margin:8px 0 28px;color:var(--muted)}
+.box .sub{margin:8px 0 22px;color:var(--muted)}
 
-form{display:flex;flex-direction:column;gap:18px}
+form{display:flex;flex-direction:column;gap:14px}
 .field{display:flex;flex-direction:column;gap:7px}
 .lab{display:flex;justify-content:space-between;align-items:baseline;gap:10px}
 label{font-weight:600;font-size:14px}
@@ -76,7 +78,7 @@ input.pin{font-family:var(--f-mono);letter-spacing:.35em}
 .msg{font-size:13.5px;padding:10px 12px;border-radius:8px;background:var(--red-bg);color:var(--red)}
 .msg.good{background:var(--green-bg);color:var(--green)}
 .msg:empty{display:none}
-.below{margin-top:26px;font-size:13.5px;color:var(--muted)}
+.below{margin-top:18px;font-size:13.5px;color:var(--muted)}
 
 .who{display:flex;flex-direction:column;gap:14px}
 .acct{display:flex;align-items:center;gap:12px;border:1px solid var(--line);border-radius:10px;padding:12px 14px}
@@ -89,8 +91,8 @@ input.pin{font-family:var(--f-mono);letter-spacing:.35em}
 
 /* ── Right: brand panel ── */
 .brand{background:var(--ink);color:#fff;position:relative;overflow:hidden;display:flex;flex-direction:column;justify-content:center;
-  padding-block:48px;padding-left:max(48px,env(safe-area-inset-left,0px));padding-right:max(48px,env(safe-area-inset-right,0px))}
-.stage{position:relative;z-index:1;max-width:440px;display:flex;flex-direction:column;gap:30px}
+  padding-block:24px;padding-left:max(48px,env(safe-area-inset-left,0px));padding-right:max(48px,env(safe-area-inset-right,0px))}
+.stage{position:relative;z-index:1;max-width:440px;display:flex;flex-direction:column;gap:clamp(16px,3.2vh,30px)}
 .brand h2{font:700 clamp(26px,2.6vw,34px)/1.15 var(--f-body);letter-spacing:-.02em;color:#fff}
 .brand h2 em{font-style:normal;color:var(--yellow)}
 .bar{width:44px;height:5px;background:var(--yellow)}
@@ -150,7 +152,7 @@ a.btn{display:grid;place-items:center;text-decoration:none}
       <div class="box">
         <!-- Sign-in form -->
         <div id="v-form">
-          <h1 style="margin-bottom:28px">Sign in to Keep</h1>
+          <h1 style="margin-bottom:22px">Sign in to Keep</h1>
           <form id="f-signin" novalidate>
             <div class="field">
               <label for="si-id">Phone number or email</label>
