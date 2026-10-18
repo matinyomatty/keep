@@ -90,23 +90,24 @@ input.pin{font-family:var(--f-mono);letter-spacing:.35em}
 /* ── Right: brand panel ── */
 .brand{background:var(--ink);color:#fff;position:relative;overflow:hidden;display:flex;flex-direction:column;justify-content:center;
   padding-block:48px;padding-left:max(48px,env(safe-area-inset-left,0px));padding-right:max(48px,env(safe-area-inset-right,0px))}
-.brand::before{content:"";position:absolute;right:-120px;top:-120px;width:420px;height:420px;border-radius:50%;background:var(--blue);opacity:.9}
-.brand::after{content:"";position:absolute;right:120px;bottom:-60px;width:180px;height:180px;background:var(--yellow);border-radius:24px;transform:rotate(18deg)}
 .stage{position:relative;z-index:1;max-width:440px;display:flex;flex-direction:column;gap:30px}
 .brand h2{font:700 clamp(26px,2.6vw,34px)/1.15 var(--f-body);letter-spacing:-.02em;color:#fff}
 .brand h2 em{font-style:normal;color:var(--yellow)}
-.receipt{background:#fff;color:var(--ink);width:280px;max-width:100%;padding:20px 20px 24px;font:400 12.5px/1.75 var(--f-mono);font-variant-numeric:tabular-nums;
-  box-shadow:0 30px 60px -20px rgba(0,0,0,.6);transform:rotate(-2.5deg);
-  -webkit-mask:linear-gradient(#000,#000) top/100% calc(100% - 8px) no-repeat,radial-gradient(circle 5px at 8px 100%,transparent 98%,#000) bottom left/16px 8px repeat-x;
-          mask:linear-gradient(#000,#000) top/100% calc(100% - 8px) no-repeat,radial-gradient(circle 5px at 8px 100%,transparent 98%,#000) bottom left/16px 8px repeat-x}
-.receipt .hd{text-align:center;font-weight:500;letter-spacing:.2em;margin-bottom:2px}
-.receipt .sm{text-align:center;color:#6b7280;font-size:11px;margin-bottom:10px}
-.receipt .r{display:flex;justify-content:space-between;gap:10px}
-.receipt .r span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.receipt .rule{border-top:1px dashed #b8bec9;margin:8px 0}
-.receipt .tot{font-weight:500;font-size:14px}
-.receipt .pay{color:#6b7280;font-size:11.5px}
-.receipt .thx{text-align:center;margin-top:10px;font-size:11px;color:#6b7280}
+.bar{width:44px;height:5px;background:var(--yellow)}
+.kicker{font:500 12px/1 var(--f-mono);letter-spacing:.14em;text-transform:uppercase;color:#8d96a8}
+.today{background:#fff;color:var(--ink);width:340px;max-width:100%;border-radius:12px;border-top:5px solid var(--blue);padding:18px 20px 16px;
+  box-shadow:0 30px 60px -24px rgba(0,0,0,.7);font-variant-numeric:tabular-nums}
+.today .hd{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:12px}
+.today .hd b{font:700 15px var(--f-body)}
+.today .hd span{font:400 12px var(--f-mono);color:#6b7280}
+.today .big{font:700 30px/1.1 var(--f-body);letter-spacing:-.02em}
+.today .big small{font:500 13px var(--f-mono);color:#6b7280;margin-right:6px;letter-spacing:0}
+.today .lbl{font-size:12.5px;color:#6b7280;margin:2px 0 14px}
+.today .r{display:flex;justify-content:space-between;gap:10px;font-size:13.5px;padding:7px 0;border-top:1px solid #eef0f4}
+.today .r span:last-child{font-family:var(--f-mono);font-size:13px}
+.today .ok{color:#0f7a3d}
+.kinds{display:flex;flex-wrap:wrap;gap:8px}
+.kinds span{border:1px solid #2a3140;color:#c5ccd8;border-radius:999px;padding:5px 12px;font-size:12.5px}
 .points{display:flex;flex-wrap:wrap;gap:8px 22px;color:#aab2c2;font-size:13.5px}
 .points span::before{content:"";display:inline-block;width:6px;height:6px;background:var(--yellow);margin-right:8px;vertical-align:2px}
 
@@ -166,7 +167,7 @@ a.btn{display:grid;place-items:center;text-decoration:none}
             <button class="btn" type="submit" id="si-btn">Sign in</button>
             <p class="switch"><button type="button" class="tlink" id="switch">Use a password instead</button></p>
           </form>
-          <p class="below">Added by your shop owner? Use the phone number and PIN they gave you.</p>
+          <p class="below">Added by your employer? Use the phone number and PIN they gave you.</p>
         </div>
 
         <!-- Already signed in -->
@@ -186,19 +187,21 @@ a.btn{display:grid;place-items:center;text-decoration:none}
 
   <aside class="brand" aria-label="About Keep">
     <div class="stage">
-      <h2>The point of sale for shops <em>across Tanzania.</em></h2>
-      <div class="receipt" aria-label="Example receipt">
-        <div class="hd">YOUR SHOP</div>
-        <div class="sm">Sat 18 Oct 2026 · 14:32</div>
-        <div class="r"><span>Bosch drill 13mm × 1</span><span>185,000</span></div>
-        <div class="r"><span>Drill bits set × 1</span><span>32,000</span></div>
-        <div class="r"><span>Extension cable 5m × 2</span><span>44,000</span></div>
-        <div class="rule"></div>
-        <div class="r tot"><span>TOTAL TZS</span><span>261,000</span></div>
-        <div class="r pay"><span>Lipa kwa Simu</span><span>261,000</span></div>
-        <div class="thx">Asante kwa kununua</div>
+      <div class="bar" aria-hidden="true"></div>
+      <div>
+        <p class="kicker" style="margin:0 0 14px">Point of sale · Tanzania</p>
+        <h2>Every sale, every shilling. <em>Wherever you are.</em></h2>
       </div>
-      <div class="points"><span>Works offline</span><span>Daily cash-up</span><span>Check your shop from anywhere</span></div>
+      <div class="today" aria-label="Example day summary">
+        <div class="hd"><b>Today</b><span>Sat 18 Oct</span></div>
+        <div class="big"><small>TZS</small>1,284,000</div>
+        <div class="lbl">Total sales</div>
+        <div class="r"><span>Cash</span><span>672,000</span></div>
+        <div class="r"><span>Lipa kwa Simu</span><span>612,000</span></div>
+        <div class="r"><span>Customers served</span><span>46</span></div>
+        <div class="r"><span>Cash-up</span><span class="ok">Balanced ✓</span></div>
+      </div>
+      <div class="kinds" aria-label="Built for"><span>Shops</span><span>Barbershops &amp; salons</span><span>Hardware</span><span>Electronics</span><span>More coming</span></div>
     </div>
   </aside>
 </div>
@@ -208,7 +211,7 @@ a.btn{display:grid;place-items:center;text-decoration:none}
   <div class="sheet">
     <div class="hd"><h2 id="t-title">Request free trial</h2><button class="x" type="button" id="close-trial" aria-label="Close">×</button></div>
     <div id="t-form-wrap">
-      <p class="sub">We'll set up Keep for your shop and contact you on WhatsApp.</p>
+      <p class="sub">We'll set up Keep for your business and contact you on WhatsApp.</p>
       <form id="f-trial" novalidate>
         <div class="two">
           <div class="field"><label for="n-name">Your name</label><input id="n-name" autocomplete="name"></div>
@@ -331,7 +334,7 @@ a.btn{display:grid;place-items:center;text-decoration:none}
     const c = (e && e.code) || '';
     if (c.includes('too-many')) return 'Too many tries. Wait a few minutes and try again.';
     if (c.includes('network')) return 'No internet connection. Check it and try again.';
-    if (c.includes('user-disabled')) return 'This account has been switched off. Contact your shop owner.';
+    if (c.includes('user-disabled')) return 'This account has been switched off. Contact your business owner.';
     if (c.startsWith('auth/')) return 'That phone number or ' + (usePin ? 'PIN' : 'password') + " doesn't match. Try again.";
     return (e && e.message) || 'Could not sign in. Try again.';
   }
@@ -394,7 +397,7 @@ a.btn{display:grid;place-items:center;text-decoration:none}
     try {
       await startFirebase();
       const email = await emailFor(id);
-      if (isSeller(email)) { say(msg, 'Ask your shop owner to reset your PIN from Team on the till.'); return; }
+      if (isSeller(email)) { say(msg, 'Ask the business owner to reset your PIN from Team.'); return; }
       await auth.sendPasswordResetEmail(email);
       say(msg, 'We sent a reset link to your email. Check spam too.', true);
     } catch (err) { say(msg, friendly(err)); }
