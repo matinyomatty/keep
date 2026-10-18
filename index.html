@@ -169,10 +169,37 @@ a.btn{display:grid;place-items:center;text-decoration:none}
             <button class="btn" type="submit" id="si-btn">Sign in</button>
             <p class="switch"><button type="button" class="tlink" id="switch">Use a password instead</button></p>
           </form>
-          <p class="below">Added by your employer? Use the phone number and PIN they gave you.</p>
+          <p class="below">First time here? <button type="button" class="tlink" id="open-setup">Use your setup code</button> to choose your PIN.</p>
         </div>
 
         <!-- Already signed in -->
+        <div id="v-setup" hidden>
+          <h1 style="margin-bottom:8px">Choose your PIN</h1>
+          <p class="sub" id="su-sub">Enter the setup code you received on WhatsApp.</p>
+          <form id="f-code" novalidate>
+            <div class="field">
+              <label for="su-code">Setup code</label>
+              <input id="su-code" type="text" autocomplete="one-time-code" autocapitalize="characters" spellcheck="false" maxlength="9" placeholder="ABCD-2345" style="font-family:var(--f-mono);letter-spacing:.2em;text-transform:uppercase">
+            </div>
+            <p class="msg" id="su-msg" role="alert"></p>
+            <button class="btn" type="submit" id="su-btn">Continue</button>
+          </form>
+          <form id="f-pin" novalidate hidden>
+            <div class="field">
+              <label for="su-pin">New PIN</label>
+              <input id="su-pin" type="password" class="pin" inputmode="numeric" pattern="[0-9]*" maxlength="12" autocomplete="new-password">
+            </div>
+            <div class="field">
+              <label for="su-pin2">Type it again</label>
+              <input id="su-pin2" type="password" class="pin" inputmode="numeric" pattern="[0-9]*" maxlength="12" autocomplete="new-password">
+            </div>
+            <p class="switch" style="margin:0">6 to 12 digits. Only you should know it. Avoid 123456 or your birth year.</p>
+            <p class="msg" id="sp-msg" role="alert"></p>
+            <button class="btn" type="submit" id="sp-btn">Save PIN and open</button>
+          </form>
+          <p class="below"><button type="button" class="tlink" id="back-signin">Back to sign in</button></p>
+        </div>
+
         <div id="v-who" class="who" hidden>
           <h1 id="who-title">Welcome back</h1>
           <p class="sub" style="margin:0 0 6px" id="who-sub">Continue where you left off.</p>
@@ -399,14 +426,76 @@ a.btn{display:grid;place-items:center;text-decoration:none}
     try {
       await startFirebase();
       const email = await emailFor(id);
-      if (isSeller(email)) { say(msg, 'Ask the business owner to reset your PIN from Team.'); return; }
+      if (isSeller(email)) { say(msg, 'Ask the business owner for a new setup code. They can make one from Team → Reset PIN.'); return; }
       await auth.sendPasswordResetEmail(email);
       say(msg, 'We sent a reset link to your email. Check spam too.', true);
     } catch (err) { say(msg, friendly(err)); }
   };
 
+  // ── First time: setup code → own PIN ─────────────────────
+  // The code is a one-time password created by the owner. We read its invite,
+  // sign in with it once, replace it with the person's own PIN, then delete the invite.
+  let invite = null, inviteCode = '';
+  const cleanCode = v => String(v || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8);
+  function showSetup(code) {
+    $('v-form').hidden = true; $('v-who').hidden = true; $('v-setup').hidden = false;
+    $('f-code').hidden = false; $('f-pin').hidden = true; invite = null;
+    $('su-sub').textContent = 'Enter the setup code you received on WhatsApp.';
+    say($('su-msg'), ''); say($('sp-msg'), '');
+    $('su-code').value = code ? cleanCode(code).replace(/^(.{4})(.+)$/, '$1-$2') : '';
+    if (code) $('f-code').requestSubmit(); else $('su-code').focus();
+  }
+  function hideSetup() { $('v-setup').hidden = true; $('v-form').hidden = false; try { history.replaceState(null, '', location.pathname); } catch (e) {} }
+  $('open-setup').onclick = () => showSetup('');
+  $('back-signin').onclick = hideSetup;
+  $('su-code').addEventListener('input', e => { const c = cleanCode(e.target.value); e.target.value = c.length > 4 ? c.slice(0, 4) + '-' + c.slice(4) : c; });
+  ['su-pin', 'su-pin2'].forEach(id => $(id).addEventListener('input', e => { e.target.value = e.target.value.replace(/\D/g, '').slice(0, 12); }));
+
+  $('f-code').addEventListener('submit', async e => {
+    e.preventDefault();
+    const msg = $('su-msg'), btn = $('su-btn'), code = cleanCode($('su-code').value);
+    if (code.length !== 8) { say(msg, 'The setup code has 8 letters and numbers, like ABCD-2345.'); return; }
+    if (!LIVE) { invite = { name: 'Asha', shopName: 'Upendo Hardware' }; inviteCode = code; return askPin(); }
+    btn.disabled = true; btn.textContent = 'Checking…';
+    try {
+      await startFirebase();
+      const snap = await db.collection('invites').doc(code).get();
+      if (!snap.exists) throw new Error('That code is not valid or was already used. Ask your employer for a new one.');
+      const d = snap.data();
+      if (d.expiresAt && d.expiresAt.toMillis() < Date.now()) throw new Error('That code has expired. Ask your employer for a new one.');
+      invite = d; inviteCode = code; askPin();
+    } catch (err) { say(msg, friendly(err)); }
+    finally { btn.disabled = false; btn.textContent = 'Continue'; }
+  });
+  function askPin() {
+    $('f-code').hidden = true; $('f-pin').hidden = false;
+    $('su-sub').textContent = `Hi ${invite.name || ''}! Choose the PIN you will use at ${invite.shopName || 'your shop'}.`;
+    $('su-pin').value = ''; $('su-pin2').value = ''; $('su-pin').focus();
+  }
+  $('f-pin').addEventListener('submit', async e => {
+    e.preventDefault();
+    const msg = $('sp-msg'), btn = $('sp-btn'), pin = $('su-pin').value;
+    if (!/^\d{6,12}$/.test(pin)) { say(msg, 'Your PIN must be 6 to 12 digits.'); return; }
+    if (/^(\d)\1+$/.test(pin) || '0123456789012'.includes(pin) || '9876543210987'.includes(pin)) { say(msg, 'That PIN is too easy to guess. Choose a different one.'); return; }
+    if (pin !== $('su-pin2').value) { say(msg, 'The two PINs do not match.'); return; }
+    say(msg, ''); btn.disabled = true; btn.textContent = 'Saving…';
+    try {
+      if (!LIVE) { await new Promise(r => setTimeout(r, 500)); say(msg, 'Preview: on keep.co.tz this saves your PIN and opens your shop.', true); return; }
+      const cred = await auth.signInWithEmailAndPassword(invite.email, inviteCode);
+      await cred.user.updatePassword(pin);
+      await db.collection('invites').doc(inviteCode).delete();
+      if (invite.phone) store.set('keep.lastId', invite.phone.replace(/^255/, '0'));
+      try { history.replaceState(null, '', location.pathname); } catch (x) {}
+      showWho(invite.name || 'you', await destinationFor(cred.user), true);
+    } catch (err) {
+      say(msg, (err && err.code || '').startsWith('auth/') ? 'That code no longer works. Ask your employer for a new one.' : friendly(err));
+    } finally { btn.disabled = false; btn.textContent = 'Save PIN and open'; }
+  });
+  const setupParam = new URLSearchParams(location.search).get('setup');
+
   // ── Already signed in on this device? ────────────────────
-  if (LIVE) {
+  if (setupParam) { if (LIVE) startFirebase().then(() => auth.signOut().catch(() => {})).finally(() => showSetup(setupParam)); else showSetup(setupParam); }
+  else if (LIVE) {
     startFirebase().then(() => {
       const off = auth.onAuthStateChanged(async user => {
         off();

@@ -1270,8 +1270,8 @@
                 <div class="field-group"><span class="field-label">Full name</span><input type="text" id="stName" placeholder="e.g. Amina Juma"></div>
                 <div class="form-row">
                     <div class="field-group"><span class="field-label">Phone number</span><input type="tel" id="stPhone" placeholder="07XX XXX XXX"></div>
-                    <div class="field-group"><span class="field-label">PIN (6–12 digits)</span><input type="tel" id="stPin" inputmode="numeric" placeholder="e.g. 482915"></div>
                 </div>
+                <div class="hint gray" style="margin:2px 0 10px;">They choose their own PIN. Keep gives you a one-time setup code to send them on WhatsApp.</div>
                 <span class="field-label">Role</span>
                 <div class="role-pick">
                     <label><input type="radio" name="stRoleR" value="cashier" checked onchange="$('stRole').value=this.value"><span><b>🛒 Seller</b><small>Sells, receives stock, does cash-ups. Extra rights come from Permissions.</small></span></label>
@@ -1777,6 +1777,10 @@ auth.onAuthStateChanged(async user => {
         const st = stSnap.data();
         if (st.replacedBy) return rejectLogin('Your PIN was reset. Sign in with your new PIN.');
         if (st.active === false) return rejectLogin('Your account has been switched off. Ask the shop owner.');
+        if (st.inviteCode) {
+            const inv = await db.collection('invites').doc(st.inviteCode).get().catch(() => null);
+            if (inv && inv.exists) { stopListeners(); await auth.signOut(); location.replace('../?setup=' + st.inviteCode); return; }
+        }
         S.tenantInfo = tSnap.data();
         S.me = { uid: user.uid, email: user.email, loginId: st.loginId || '', name: st.name || 'Staff', role: st.role === 'admin' ? 'admin' : 'cashier' };
         rememberUser(S.pendingLoginId || st.loginId || user.email, S.me.name, S.tenantInfo.name || S.tenant);
@@ -5003,7 +5007,7 @@ function teamTab(t) {
 }
 function toggleAddStaff(show) {
     $('addStaffForm').classList.toggle('hidden', !show); $('stOpenBtn').classList.toggle('hidden', show);
-    if (show) { ['stName', 'stPhone', 'stPin'].forEach(id => $(id).value = ''); $('stRole').value = 'cashier'; document.querySelector('input[name=stRoleR][value=cashier]').checked = true; setTimeout(() => $('stName').focus(), 150); }
+    if (show) { ['stName', 'stPhone'].forEach(id => $(id).value = ''); $('stRole').value = 'cashier'; document.querySelector('input[name=stRoleR][value=cashier]').checked = true; setTimeout(() => $('stName').focus(), 150); }
 }
 // Seller permissions save the moment they're switched
 function setPerm(el) {
@@ -5104,18 +5108,34 @@ async function makeSellerLogin(pin) {
     return { uid: cred.user.uid, email };
 }
 
-async function sendLoginDetails(name, phone, pin, isNew) {
-    const link = location.href.split('#')[0].split('?')[0];
-    const text = `Habari ${name.split(' ')[0]}! ${isNew ? 'Your Keep POS account for' : 'Your new PIN for'} *${S.tenantInfo.name || S.tenant}* is ready.\n\n📱 Phone: ${prettyPhone(phone)}\n🔑 PIN: ${pin}\n\nOpen: ${link}`;
-    const ok = await showConfirm(`<b>${esc(name)}</b> can sign in with<br><br>📱 <b>${esc(prettyPhone(phone))}</b><br>🔑 PIN <b>${esc(pin)}</b><br><br>Send these details to them on WhatsApp?`, '📲 WhatsApp', 'var(--pos)');
+// ── One-time setup codes: staff choose their own PIN ──
+// The owner never sees or sets a seller's PIN. A new login is created with a random
+// 8-character code as its temporary password; the seller opens keep.co.tz/?setup=CODE,
+// signs in with the code once and replaces it with a PIN only they know. The code then dies.
+const SETUP_HOURS = 48;
+function newSetupCode() {
+    const abc = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789', r = crypto.getRandomValues(new Uint8Array(8));
+    return Array.from(r, x => abc[x % abc.length]).join('');
+}
+const prettyCode = c => c.slice(0, 4) + '-' + c.slice(4);
+const setupLink = c => new URL('../?setup=' + c, location.href).href;
+function addInvite(b, code, uid, email, name, phone) {
+    b.set(db.collection('invites').doc(code), {
+        shop: S.tenant, shopName: S.tenantInfo.name || S.tenant, uid, email, name, phone,
+        expiresAt: firebase.firestore.Timestamp.fromMillis(Date.now() + SETUP_HOURS * 3600e3),
+        createdAt: now(), createdBy: S.me.name
+    });
+}
+async function sendSetupCode(name, phone, code, isNew) {
+    const text = `Habari ${name.split(' ')[0]}! ${isNew ? `You have been added to *${S.tenantInfo.name || S.tenant}* on Keep.` : `Your Keep PIN for *${S.tenantInfo.name || S.tenant}* was reset.`}\n\nTap the link to choose your own PIN:\n${setupLink(code)}\n\nOr open keep.co.tz → "First time here?" and enter setup code *${prettyCode(code)}*.\nThe code works once and expires in ${SETUP_HOURS} hours. Do not share it.`;
+    const ok = await showConfirm(`Setup code for <b>${esc(name)}</b><br><br><span style="font-size:1.6rem;font-weight:800;letter-spacing:3px;">${prettyCode(code)}</span><br><br><span style="font-size:0.78rem;color:#6b7280;">They use it once to choose their own PIN. It expires in ${SETUP_HOURS} hours.</span><br><br>Send it to ${esc(prettyPhone(phone))} on WhatsApp?`, '📲 WhatsApp', 'var(--pos)');
     if (ok) openWa(phone, text);
 }
 
 async function addStaff() {
-    const name = $('stName').value.trim(), phone = normPhone($('stPhone').value), role = $('stRole').value, pin = $('stPin').value.trim();
+    const name = $('stName').value.trim(), phone = normPhone($('stPhone').value), role = $('stRole').value;
     if (!name) return toast('⚠️ Enter their name.', 'err');
     if (!/^255[67]\d{8}$/.test(phone) && !/^\d{10,15}$/.test(phone)) return toast('⚠️ Enter a valid phone number, e.g. 0712 345 678.', 'err');
-    if (!/^\d{6,12}$/.test(pin)) return toast('⚠️ PIN must be 6 to 12 digits.', 'err');
     if (!navigator.onLine) return toast('⚠️ Adding a seller needs internet.', 'err');
     const maxS = Number((S.tenantInfo.limits || {}).maxStaff) || 0;
     if (maxS && usedStaff() >= maxS) return toast(`⚠️ Your plan allows ${maxS} staff logins. Switch someone off or ask Keep to upgrade.`, 'err');
@@ -5123,15 +5143,17 @@ async function addStaff() {
     try {
         const taken = await db.collection('logins').doc(phone).get({ source: 'server' });
         if (taken.exists) return toast('⚠️ That phone number already has an account.', 'err');
-        const { uid, email } = await makeSellerLogin(pin);
+        const code = newSetupCode();
+        const { uid, email } = await makeSellerLogin(code);
         const b = db.batch();
-        b.set(col('staff').doc(uid), { name, loginId: phone, role, active: true, createdAt: now(), createdBy: S.me.name });
+        b.set(col('staff').doc(uid), { name, loginId: phone, role, active: true, createdAt: now(), createdBy: S.me.name, inviteCode: code });
+        addInvite(b, code, uid, email, name, phone);
         b.set(db.collection('users').doc(uid), { shop: S.tenant });
         b.set(db.collection('logins').doc(phone), { email, shop: S.tenant, uid });
         usageAdd(b, 'staff', uid);
         await b.commit();
         toggleAddStaff(false);
-        await sendLoginDetails(name, phone, pin, true);
+        await sendSetupCode(name, phone, code, true);
     } catch (e) {
         toast('⚠️ ' + friendlyErr(e), 'err');
     } finally { btn.disabled = false; btn.textContent = '➕ ADD SELLER'; }
@@ -5144,15 +5166,15 @@ async function resetStaffPin(uid) {
         if (!await showConfirm(`Email <b>${esc(p.name)}</b> a link to set a new PIN?<br><span style="font-size:0.78rem;color:#6b7280;">${esc(maskEmail(p.loginId))}</span>`, 'Send email', 'var(--blue)')) return;
         return auth.sendPasswordResetEmail(p.loginId).then(() => toast('📧 Reset email sent')).catch(e => toast('⚠️ ' + friendlyErr(e), 'err'));
     }
-    const pin = await askValue(`New PIN for <b>${esc(p.name)}</b><br><span style="font-size:0.75rem;color:#6b7280;">6 to 12 digits. Their old PIN stops working.</span>`, '••••••', 'Reset');
-    if (pin === null) return;
-    if (!/^\d{6,12}$/.test(pin)) return toast('⚠️ PIN must be 6 to 12 digits.', 'err');
+    if (!await showConfirm(`Reset <b>${esc(p.name)}</b>'s PIN?<br><span style="font-size:0.78rem;color:#6b7280;">Their old PIN stops working. You get a new setup code to send them, and they choose a new PIN themselves.</span>`, 'Reset PIN', 'var(--blue)')) return;
+    const code = newSetupCode();
     loader(true, 'RESETTING PIN...');
     try {
         // A new login replaces the old one; the old one is switched off.
-        const { uid: newUid, email } = await makeSellerLogin(pin);
+        const { uid: newUid, email } = await makeSellerLogin(code);
         const b = db.batch();
-        b.set(col('staff').doc(newUid), { name: p.name, loginId: p.loginId, role: p.role, active: p.active !== false, createdAt: now(), createdBy: S.me.name, previousUid: uid });
+        b.set(col('staff').doc(newUid), { name: p.name, loginId: p.loginId, role: p.role, active: p.active !== false, createdAt: now(), createdBy: S.me.name, previousUid: uid, inviteCode: code });
+        addInvite(b, code, newUid, email, p.name, p.loginId);
         b.update(col('staff').doc(uid), { active: false, replacedBy: newUid });
         b.set(db.collection('users').doc(newUid), { shop: S.tenant });
         b.delete(db.collection('users').doc(uid));
@@ -5160,7 +5182,7 @@ async function resetStaffPin(uid) {
         usageDel(b, 'staff', uid); if (p.active !== false) usageAdd(b, 'staff', newUid);
         await b.commit();
         loader(false);
-        await sendLoginDetails(p.name, p.loginId, pin, false);
+        await sendSetupCode(p.name, p.loginId, code, false);
     } catch (e) {
         toast('⚠️ ' + friendlyErr(e), 'err');
     } finally { loader(false); }
