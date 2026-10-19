@@ -10,6 +10,10 @@
 <title>Keep Sign In</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <meta name="theme-color" content="#0b0d12">
+<link rel="manifest" href="/manifest.json">
+<link rel="apple-touch-icon" href="/icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Keep">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=DM+Mono:wght@400;500&display=swap">
@@ -46,6 +50,10 @@ h1,h2{margin:0;text-wrap:balance}
 .logo .w i{font-style:normal;color:var(--blue)}
 .trial{border:1px solid var(--line);background:var(--paper);color:var(--ink);font:600 13.5px/1 var(--f-body);padding:10px 14px;border-radius:999px;white-space:nowrap}
 .trial:hover{border-color:var(--ink)}
+.acts{display:flex;align-items:center;gap:8px}
+.inst{display:inline-flex;align-items:center;gap:7px;background:var(--ink);color:#fff;border-color:var(--ink)}
+.inst:hover{background:var(--blue);border-color:var(--blue)}
+.inst svg{width:15px;height:15px}
 
 .center{flex:1;min-height:0;display:flex;align-items:center;justify-content:center;padding-block:16px}
 .box{width:100%;max-width:380px}
@@ -145,7 +153,10 @@ a.btn{display:grid;place-items:center;text-decoration:none}
   <div class="side">
     <header class="top">
       <a class="logo" href="#" aria-label="Keep"><span class="w">Keep<i>.</i></span></a>
-      <button class="trial" type="button" id="open-trial">Request free trial</button>
+      <div class="acts">
+        <button class="trial inst" type="button" id="install-app" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11m0 0-4.5-4.5M12 15l4.5-4.5M5 20h14"/></svg>Install app</button>
+        <button class="trial" type="button" id="open-trial">Request free trial</button>
+      </div>
     </header>
 
     <div class="center">
@@ -526,6 +537,22 @@ a.btn{display:grid;place-items:center;text-decoration:none}
     $('wa-link').href = 'https://wa.me/255740116251?text=' + encodeURIComponent(text);
     $('t-form-wrap').hidden = true; $('t-sent').hidden = false;
   });
+
+  // ── Install Keep as an app (computer or phone) ───────────
+  let installEvt = null;
+  const instBtn = $('install-app');
+  const isApp = matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+  window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); installEvt = e; if (!isApp) instBtn.hidden = false; });
+  instBtn.onclick = async () => {
+    if (!installEvt) return;
+    installEvt.prompt();
+    try { await installEvt.userChoice; } catch (_) {}
+    installEvt = null; instBtn.hidden = true;
+  };
+  window.addEventListener('appinstalled', () => { instBtn.hidden = true; });
+  if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
+    window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
+  }
 })();
 </script>
 
