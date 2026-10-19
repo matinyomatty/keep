@@ -206,7 +206,7 @@
             <div>
                 <span class="section-label">Plans & limits</span>
                 <div class="card">
-                    <div style="font-size:.7rem;color:var(--gray);margin-bottom:8px;">What each plan includes. Staff and items: 0 = unlimited. Changing a plan here doesn't change existing shops until you re-save their plan (Shops → Edit).</div>
+                    <div style="font-size:.7rem;color:var(--gray);margin-bottom:8px;">What each plan includes. "Text or PDF" lets the shop owner pick the format in their till Settings. Staff and items: 0 = unlimited. Changing a plan here doesn't change existing shops until you re-save their plan (Shops → Edit).</div>
                     <div id="planRows"></div>
                     <div class="row-btns" style="margin-top:6px;margin-bottom:0;">
                         <button class="btn" onclick="addPlanRow()">➕ Add plan</button>
@@ -356,9 +356,9 @@ const DEFAULT_CONFIG = {
         { id: 'starter', name: 'Starter', price: 10000, maxStaff: 2, maxProducts: 0,
           services: { dailyReport: 'text', receipts: 'manual', receiptQuota: 0, debtReminders: false, alerts: false } },
         { id: 'business', name: 'Business', price: 20000, maxStaff: 5, maxProducts: 0,
-          services: { dailyReport: 'pdf', receipts: 'text', receiptQuota: 300, debtReminders: true, alerts: false } },
+          services: { dailyReport: 'both', receipts: 'text', receiptQuota: 300, debtReminders: true, alerts: false } },
         { id: 'pro', name: 'Pro', price: 30000, maxStaff: 10, maxProducts: 0,
-          services: { dailyReport: 'pdf', receipts: 'pdf', receiptQuota: 600, debtReminders: true, alerts: true } }
+          services: { dailyReport: 'both', receipts: 'both', receiptQuota: 600, debtReminders: true, alerts: true } }
     ],
     addons: { extraStaffPrice: 2000, topupReceipts: 250, topupPrice: 5000 },
     trialDays: 14, graceDays: 3,
@@ -402,12 +402,14 @@ function loader(on, text) { $('loading').style.display = on ? 'flex' : 'none'; $
 const plans = () => (V.config.plans && V.config.plans.length ? V.config.plans : DEFAULT_CONFIG.plans);
 const planById = id => plans().find(p => p.id === id) || plans().find(p => p.name === id) || null;
 const SVC_DEFAULT = { dailyReport: 'off', receipts: 'manual', receiptQuota: 0, debtReminders: false, alerts: false };
-const planServices = p => ({ ...SVC_DEFAULT, ...((p && p.services) || {}) });
+// Older saved plans used 'pdf'; a PDF plan always allows text too.
+const normSvc = sv => { sv = { ...SVC_DEFAULT, ...(sv || {}) }; if (sv.dailyReport === 'pdf') sv.dailyReport = 'both'; if (sv.receipts === 'pdf') sv.receipts = 'both'; return sv; };
+const planServices = p => normSvc(p && p.services);
 const planLimits = p => ({ maxStaff: Number(p.maxStaff) || 0, maxProducts: Number(p.maxProducts) || 0 });
-const RECEIPT_LABEL = { manual: 'WhatsApp button (manual)', text: 'Automatic text', pdf: 'Automatic PDF' };
-const REPORT_LABEL = { off: 'Off', text: 'Text', pdf: 'PDF' };
+const RECEIPT_LABEL = { manual: 'WhatsApp button (manual)', text: 'Automatic · text', both: 'Automatic · text or PDF (shop chooses)' };
+const REPORT_LABEL = { off: 'Off', text: 'Text', both: 'Text or PDF (shop chooses)' };
 function servicesText(sv) {
-    sv = { ...SVC_DEFAULT, ...(sv || {}) };
+    sv = normSvc(sv);
     const bits = [`Daily report: ${REPORT_LABEL[sv.dailyReport] || 'Off'}`,
         `Receipts: ${RECEIPT_LABEL[sv.receipts] || 'Manual'}${sv.receipts !== 'manual' && sv.receiptQuota ? ' · ' + n0(sv.receiptQuota) + '/month' : ''}`];
     if (sv.debtReminders) bits.push('Debt reminders');
@@ -1029,8 +1031,8 @@ const planRow = p => { const sv = planServices(p); return `<div class="plan-row"
     <div><label>Items</label><input data-k="maxProducts" type="number" inputmode="numeric" value="${p.maxProducts || 0}"></div>
     <button class="tiny" style="color:var(--red);padding:9px;" title="Remove plan" onclick="this.parentElement.remove()">✕</button>
     <div class="svc">
-        <div><label>Daily report</label><select data-k="dailyReport">${opt('off', sv.dailyReport, 'Off')}${opt('text', sv.dailyReport, 'WhatsApp text')}${opt('pdf', sv.dailyReport, 'WhatsApp PDF')}</select></div>
-        <div><label>Receipts</label><select data-k="receipts">${opt('manual', sv.receipts, 'Manual button only')}${opt('text', sv.receipts, 'Automatic text')}${opt('pdf', sv.receipts, 'Automatic PDF')}</select></div>
+        <div><label>Daily report</label><select data-k="dailyReport">${opt('off', sv.dailyReport, 'Off')}${opt('text', sv.dailyReport, 'Text only')}${opt('both', sv.dailyReport, 'Text or PDF')}</select></div>
+        <div><label>Receipts</label><select data-k="receipts">${opt('manual', sv.receipts, 'Manual button only')}${opt('text', sv.receipts, 'Automatic · text only')}${opt('both', sv.receipts, 'Automatic · text or PDF')}</select></div>
         <div><label>Receipts / month</label><input data-k="receiptQuota" type="number" inputmode="numeric" value="${sv.receiptQuota || 0}"></div>
         <label class="ck"><input type="checkbox" data-k="debtReminders" ${sv.debtReminders ? 'checked' : ''}> Debt reminders</label>
         <label class="ck"><input type="checkbox" data-k="alerts" ${sv.alerts ? 'checked' : ''}> Stock & cash-up alerts</label>

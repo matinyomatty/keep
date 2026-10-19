@@ -507,6 +507,10 @@
         .tm-off summary { cursor: pointer; font-size: .74rem; font-weight: 800; color: var(--gray); padding: 8px 2px; }
         .tm-box { background: #f8fafc; border: 1px solid #e8edf3; border-radius: 14px; padding: 12px; margin-bottom: 10px; }
         .tm-box-title { font-weight: 800; font-size: .82rem; margin-bottom: 8px; }
+        .wa-seg { display: flex; gap: 6px; flex-wrap: wrap; }
+        .wa-seg button { flex: 1; min-width: 70px; padding: 10px 8px; border-radius: 10px; border: 2px solid var(--line, #e3e8ef); background: #fff; font-weight: 800; font-size: .8rem; color: var(--ink); cursor: pointer; }
+        .wa-seg button.on { background: var(--ink); color: #fff; border-color: var(--ink); }
+        .wa-seg button:disabled { opacity: .5; cursor: not-allowed; }
         .role-pick { display: grid; gap: 6px; margin-bottom: 12px; }
         .role-pick label { display: flex; gap: 10px; align-items: flex-start; background: #fff; border: 1.5px solid #e3e8ef; border-radius: 12px; padding: 10px; cursor: pointer; }
         .role-pick label:has(input:checked) { border-color: var(--blue); background: #eff6ff; }
@@ -1303,6 +1307,7 @@
                 <div class="tm-box-title">📲 Reports to the owner</div>
                 <div class="field-group"><span class="field-label">Owner's WhatsApp number</span><input type="tel" id="setWa" placeholder="07XX XXX XXX"></div>
                 <div class="field-group"><span class="field-label">Daily sales target (TZS)</span><input type="number" id="setTarget" inputmode="decimal" placeholder="e.g. 50000"></div>
+                <div id="waFmt"></div>
             </div>
             <div class="tm-box">
                 <div class="tm-box-title">🧾 On customer receipts</div>
@@ -5017,6 +5022,34 @@ function setPerm(el) {
         .then(() => toast(el.type === 'checkbox' ? (v ? '✅ Sellers can now: ' : '⛔ Sellers can no longer: ') + el.closest('.tg-row').querySelector('b').textContent.toLowerCase() : `✅ Biggest discount: ${v}%`))
         .catch(e => { toast('⚠️ ' + friendlyErr(e), 'err'); if (el.type === 'checkbox') el.checked = !v; });
 }
+// ── WhatsApp formats: the plan decides what is allowed, the owner picks ──
+// tenant.services.dailyReport: off | text | both   ·   receipts: manual | text | both  ('pdf' = both)
+function shopServices() {
+    const sv = { dailyReport: 'off', receipts: 'manual', receiptQuota: 0, ...((S.tenantInfo || {}).services || {}) };
+    if (sv.dailyReport === 'pdf') sv.dailyReport = 'both'; if (sv.receipts === 'pdf') sv.receipts = 'both';
+    return sv;
+}
+function renderWaFormats() {
+    const box = $('waFmt'); if (!box) return;
+    const sv = shopServices(), st = S.tenantInfo.settings || {};
+    const rep = st.waReport || 'text', rec = st.waReceipts || (sv.receipts === 'manual' ? 'off' : 'text');
+    const seg = (key, cur, opts) => `<div class="wa-seg">${opts.map(([v, label, ok]) =>
+        `<button type="button" class="${v === cur && ok ? 'on' : ''}" ${ok ? `onclick="setWaFmt('${key}','${v}')"` : 'disabled title="Upgrade your plan"'}>${ok ? '' : '🔒 '}${label}</button>`).join('')}</div>`;
+    const repOk = sv.dailyReport !== 'off', pdfRep = sv.dailyReport === 'both';
+    const recOk = sv.receipts !== 'manual', pdfRec = sv.receipts === 'both';
+    box.innerHTML = `
+        <div class="field-group"><span class="field-label">Daily report on WhatsApp</span>
+            ${repOk ? seg('waReport', rep, [['text', 'Text', true], ['pdf', 'PDF', pdfRep]]) : '<div class="hint gray">🔒 Not in your plan. Ask Keep to upgrade.</div>'}</div>
+        <div class="field-group"><span class="field-label">Receipts to customers${recOk && sv.receiptQuota ? ` · ${sv.receiptQuota}/month` : ''}</span>
+            ${recOk ? seg('waReceipts', rec, [['off', 'Off', true], ['text', 'Text', true], ['pdf', 'PDF', pdfRec]]) : '<div class="hint gray">Your plan uses the WhatsApp button on each sale. Automatic receipts need an upgrade.</div>'}</div>
+        ${(repOk && !pdfRep) || (recOk && !pdfRec) ? '<div class="hint gray" style="margin-top:-4px;">🔒 PDF needs a higher plan.</div>' : ''}`;
+}
+function setWaFmt(key, v) {
+    tRef().update({ ['settings.' + key]: v }).then(() => {
+        S.tenantInfo.settings = { ...(S.tenantInfo.settings || {}), [key]: v }; renderWaFormats();
+        toast(key === 'waReport' ? `✅ Daily report: ${v.toUpperCase()}` : v === 'off' ? '✅ Automatic receipts off' : `✅ Receipts: ${v.toUpperCase()}`);
+    }).catch(e => toast('⚠️ ' + friendlyErr(e), 'err'));
+}
 function renderTeamPlan() {
     const t = S.tenantInfo, lim = t.limits || {}, st = subState(t);
     const bar = (used, max, label) => `<div class="tm-meter"><div style="display:flex;justify-content:space-between;font-size:.74rem;"><b>${label}</b><span>${used} of ${max || '∞'}</span></div>
@@ -5030,7 +5063,7 @@ function openTeam() {
     const st = S.tenantInfo.settings || {};
     $('setTarget').value = st.dailyTarget || ''; $('setWa').value = st.whatsapp ? prettyPhone(st.whatsapp) : '';
     $('setPhone').value = st.phone ? prettyPhone(st.phone) : ''; $('setAddr').value = st.address || ''; $('setFooter').value = st.footer || ''; $('setPaper').value = String(st.paperWidth || 80); renderLogoBox();
-    $('setMaxDisc').value = st.maxDiscount ?? 10; $('setCredit').checked = !!st.cashierCredit; $('setReturns').checked = !!st.cashierReturns; $('setManual').checked = !!st.cashierManual; $('setCloseDay').checked = !!st.cashierCloseDay; $('setExpenses').checked = !!st.cashierExpenses;
+    renderWaFormats(); $('setMaxDisc').value = st.maxDiscount ?? 10; $('setCredit').checked = !!st.cashierCredit; $('setReturns').checked = !!st.cashierReturns; $('setManual').checked = !!st.cashierManual; $('setCloseDay').checked = !!st.cashierCloseDay; $('setExpenses').checked = !!st.cashierExpenses;
     toggleAddStaff(false);
     openSheet('sheetTeam'); teamTab(S.teamTab || 'team');
     $('staffList').innerHTML = '<div style="font-size:0.75rem;color:var(--gray);padding:8px 0;">Loading…</div>';
