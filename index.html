@@ -54,6 +54,7 @@ h1,h2{margin:0;text-wrap:balance}
 .inst{display:inline-flex;align-items:center;gap:7px;background:var(--ink);color:#fff;border-color:var(--ink)}
 .inst:hover{background:var(--blue);border-color:var(--blue)}
 .inst svg{width:15px;height:15px}
+@media (max-width:440px){.inst{padding:10px 11px}.inst span{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}}
 
 .center{flex:1;min-height:0;display:flex;align-items:center;justify-content:center;padding-block:16px}
 .box{width:100%;max-width:380px}
@@ -154,7 +155,7 @@ a.btn{display:grid;place-items:center;text-decoration:none}
     <header class="top">
       <a class="logo" href="#" aria-label="Keep"><span class="w">Keep<i>.</i></span></a>
       <div class="acts">
-        <button class="trial inst" type="button" id="install-app" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11m0 0-4.5-4.5M12 15l4.5-4.5M5 20h14"/></svg>Install app</button>
+        <button class="trial inst" type="button" id="install-app" aria-label="Install app"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11m0 0-4.5-4.5M12 15l4.5-4.5M5 20h14"/></svg><span>Install app</span></button>
         <button class="trial" type="button" id="open-trial">Request free trial</button>
       </div>
     </header>
@@ -274,6 +275,19 @@ a.btn{display:grid;place-items:center;text-decoration:none}
     </div>
   </div>
 </div>
+
+<!-- Install Keep -->
+<div class="veil" id="inst" hidden role="dialog" aria-modal="true" aria-labelledby="i-title">
+  <div class="sheet">
+    <div class="hd"><h2 id="i-title">Install Keep</h2><button class="x" type="button" id="close-inst" aria-label="Close">×</button></div>
+    <p class="sub" id="i-intro">Keep gets its own icon and opens in its own window.</p>
+    <ol class="isteps" id="i-steps"></ol>
+  </div>
+</div>
+<style>
+.isteps{margin:4px 0 6px;padding-left:20px;display:grid;gap:10px;font-size:14.5px;line-height:1.45}
+.isteps b{font-weight:700}
+</style>
 
 <script>
 (function () {
@@ -542,12 +556,49 @@ a.btn{display:grid;place-items:center;text-decoration:none}
   let installEvt = null;
   const instBtn = $('install-app');
   const isApp = matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
-  window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); installEvt = e; if (!isApp) instBtn.hidden = false; });
+  if (isApp) instBtn.hidden = true;
+  window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); installEvt = e; });
+  const inst = $('inst');
+  function installSteps() {
+    const ua = navigator.userAgent;
+    const ios = /iPhone|iPad|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    const android = /Android/.test(ua);
+    const edge = /Edg\//.test(ua);
+    const chrome = /Chrome\//.test(ua) && !edge && !/OPR\//.test(ua);
+    let steps;
+    if (ios) steps = [
+      'Open <b>keep.co.tz</b> in <b>Safari</b>.',
+      'Tap the <b>Share</b> button (square with an arrow).',
+      'Tap <b>Add to Home Screen</b>, then <b>Add</b>.'];
+    else if (android) steps = [
+      'Tap the <b>⋮</b> menu at the top right of Chrome.',
+      'Tap <b>Add to Home screen</b> or <b>Install app</b>.',
+      'Tap <b>Install</b>.'];
+    else if (edge) steps = [
+      'Click the <b>…</b> menu at the top right of Edge.',
+      'Choose <b>Apps</b> → <b>Install Keep</b>.',
+      'Click <b>Install</b>. Keep appears on your desktop and Start menu.'];
+    else if (chrome) steps = [
+      'Click the <b>⋮</b> menu at the top right of Chrome.',
+      'Choose <b>Cast, save and share</b> → <b>Install page as app…</b> (or <b>Install Keep…</b>).',
+      'Click <b>Install</b>. Keep appears on your desktop and Start menu.'];
+    else steps = [
+      'Open <b>keep.co.tz</b> in <b>Google Chrome</b> or <b>Microsoft Edge</b>.',
+      'Click <b>Install app</b> again there.'];
+    $('i-steps').innerHTML = steps.map(s => '<li>' + s + '</li>').join('');
+    inst.hidden = false;
+  }
+  const closeInst = () => { inst.hidden = true; instBtn.focus(); };
+  $('close-inst').onclick = closeInst;
+  inst.addEventListener('click', e => { if (e.target === inst) closeInst(); });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && !inst.hidden) closeInst(); });
   instBtn.onclick = async () => {
-    if (!installEvt) return;
+    if (!installEvt) { installSteps(); return; }
     installEvt.prompt();
-    try { await installEvt.userChoice; } catch (_) {}
-    installEvt = null; instBtn.hidden = true;
+    let res = null;
+    try { res = await installEvt.userChoice; } catch (_) {}
+    installEvt = null;
+    if (res && res.outcome === 'accepted') instBtn.hidden = true;
   };
   window.addEventListener('appinstalled', () => { instBtn.hidden = true; });
   if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
