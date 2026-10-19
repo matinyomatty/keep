@@ -95,6 +95,11 @@
         .hint.amber { background: #fef9c3; color: #854d0e; } .hint.red { background: #fee2e2; color: #991b1b; } .hint.green { background: #e6f6f0; color: #065f46; }
         .plan-row { display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 6px; margin-bottom: 10px; padding-bottom: 10px; border-bottom: 1px dashed var(--line); align-items: end; }
         .plan-row .pn { grid-column: 1 / -1; }
+        .plan-row .svc { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; background: #f8fafc; border-radius: 10px; padding: 8px; }
+        .plan-row .svc select { width: 100%; padding: 9px; font-size: .82rem; border-radius: 8px; }
+        .plan-row .ck { display: flex; align-items: center; gap: 6px; font-size: .75rem; font-weight: 700; color: var(--ink); text-transform: none; grid-column: span 1; }
+        .plan-row .ck input { width: auto; }
+        @media (max-width: 520px) { .plan-row .svc { grid-template-columns: 1fr 1fr; } }
         .plan-row label { display: block; font-size: .55rem; font-weight: 800; color: var(--blue); text-transform: uppercase; margin-bottom: 3px; }
         .plan-row input { padding: 9px; font-size: .85rem; }
 
@@ -201,12 +206,24 @@
             <div>
                 <span class="section-label">Plans & limits</span>
                 <div class="card">
-                    <div style="font-size:.7rem;color:var(--gray);margin-bottom:8px;">Limits are counted in the till. 0 = unlimited.</div>
+                    <div style="font-size:.7rem;color:var(--gray);margin-bottom:8px;">What each plan includes. Staff and items: 0 = unlimited. Changing a plan here doesn't change existing shops until you re-save their plan (Shops → Edit).</div>
                     <div id="planRows"></div>
                     <div class="row-btns" style="margin-top:6px;margin-bottom:0;">
                         <button class="btn" onclick="addPlanRow()">➕ Add plan</button>
                         <button class="btn blue" onclick="savePlans()">💾 Save plans</button>
                     </div>
+                </div>
+                <span class="section-label">Add-ons</span>
+                <div class="card">
+                    <div class="fr">
+                        <div class="fg"><span class="fl">Extra staff login (TZS / month)</span><input type="number" id="adStaff" inputmode="numeric"></div>
+                    </div>
+                    <div class="fr">
+                        <div class="fg"><span class="fl">Receipt top-up (receipts)</span><input type="number" id="adTopN" inputmode="numeric"></div>
+                        <div class="fg"><span class="fl">Top-up price (TZS)</span><input type="number" id="adTopP" inputmode="numeric"></div>
+                    </div>
+                    <div style="font-size:.7rem;color:var(--gray);margin-bottom:8px;">When a shop runs out of receipts, sales never stop: the till falls back to the free manual WhatsApp button.</div>
+                    <button class="btn blue" style="width:100%;" onclick="saveAddons()">💾 Save add-ons</button>
                 </div>
                 <span class="section-label">Billing</span>
                 <div class="card">
@@ -336,10 +353,14 @@ const VENDOR_EMAIL = 'maternusadriano@gmail.com';
 const SHOP_DOMAIN = 'tenants.matinyopos.app';
 const DEFAULT_CONFIG = {
     plans: [
-        { id: 'starter', name: 'Starter', price: 30000, maxStaff: 2, maxProducts: 200 },
-        { id: 'business', name: 'Business', price: 60000, maxStaff: 5, maxProducts: 1000 },
-        { id: 'pro', name: 'Enterprise Pro', price: 100000, maxStaff: 0, maxProducts: 0 }
+        { id: 'starter', name: 'Starter', price: 10000, maxStaff: 2, maxProducts: 0,
+          services: { dailyReport: 'text', receipts: 'manual', receiptQuota: 0, debtReminders: false, alerts: false } },
+        { id: 'business', name: 'Business', price: 20000, maxStaff: 5, maxProducts: 0,
+          services: { dailyReport: 'pdf', receipts: 'text', receiptQuota: 300, debtReminders: true, alerts: false } },
+        { id: 'pro', name: 'Pro', price: 30000, maxStaff: 10, maxProducts: 0,
+          services: { dailyReport: 'pdf', receipts: 'pdf', receiptQuota: 600, debtReminders: true, alerts: true } }
     ],
+    addons: { extraStaffPrice: 2000, topupReceipts: 250, topupPrice: 5000 },
     trialDays: 14, graceDays: 3,
     payHow: 'Lipa kwa M-Pesa. Reference: your shop code.',
     supportPhone: '', tillUrl: 'https://keep.co.tz/', bizLine: 'Matinyo · Zanzibar, Tanzania'
@@ -380,6 +401,19 @@ function toast(msg, type) {
 function loader(on, text) { $('loading').style.display = on ? 'flex' : 'none'; $('loadingText').textContent = text || 'LOADING...'; }
 const plans = () => (V.config.plans && V.config.plans.length ? V.config.plans : DEFAULT_CONFIG.plans);
 const planById = id => plans().find(p => p.id === id) || plans().find(p => p.name === id) || null;
+const SVC_DEFAULT = { dailyReport: 'off', receipts: 'manual', receiptQuota: 0, debtReminders: false, alerts: false };
+const planServices = p => ({ ...SVC_DEFAULT, ...((p && p.services) || {}) });
+const planLimits = p => ({ maxStaff: Number(p.maxStaff) || 0, maxProducts: Number(p.maxProducts) || 0 });
+const RECEIPT_LABEL = { manual: 'WhatsApp button (manual)', text: 'Automatic text', pdf: 'Automatic PDF' };
+const REPORT_LABEL = { off: 'Off', text: 'Text', pdf: 'PDF' };
+function servicesText(sv) {
+    sv = { ...SVC_DEFAULT, ...(sv || {}) };
+    const bits = [`Daily report: ${REPORT_LABEL[sv.dailyReport] || 'Off'}`,
+        `Receipts: ${RECEIPT_LABEL[sv.receipts] || 'Manual'}${sv.receipts !== 'manual' && sv.receiptQuota ? ' · ' + n0(sv.receiptQuota) + '/month' : ''}`];
+    if (sv.debtReminders) bits.push('Debt reminders');
+    if (sv.alerts) bits.push('Stock & cash-up alerts');
+    return bits.join(' · ');
+}
 const planName = t => (planById(t.planId || t.plan) || {}).name || t.plan || '—';
 
 function dialog(message, { yes = 'OK', no = 'Cancel', color = 'var(--blue)', input = null } = {}) {
@@ -607,6 +641,7 @@ async function renderShopDetail(id, refreshOnly) {
             <div class="line"><span>Paid until</span><b>${pretty(t.paidUntil)}${t.trial ? ' (trial)' : ''}</b></div>
             <div class="line"><span>Locks on</span><b>${pretty(t.lockAt)}</b></div>
             <div class="line"><span>Limits</span><b>${lim.maxStaff ? lim.maxStaff + ' staff' : 'unlimited staff'} · ${lim.maxProducts ? lim.maxProducts + ' items' : 'unlimited items'}</b></div>
+            <div class="line"><span>WhatsApp</span><b style="text-align:right;">${esc(servicesText(t.services || pl.services))}</b></div>
         </div>
         <div class="row-btns">
             <button class="btn" style="background:var(--pos);color:#fff;border:none;" onclick="openPay('${id}')">💳 Record payment</button>
@@ -691,7 +726,7 @@ async function addFreeDays(id) {
 // ════════════════════════════════════════════════
 //  NEW SHOP
 // ════════════════════════════════════════════════
-function planOptions(sel) { return plans().map(p => `<option value="${esc(p.id)}" ${p.id === sel ? 'selected' : ''}>${esc(p.name)} — ${n0(p.price)}</option>`).join(''); }
+function planOptions(sel) { return plans().map(p => `<option value="${esc(p.id)}" ${p.id === sel ? 'selected' : ''}>${esc(p.name)} — ${n0(p.price)} · ${p.maxStaff ? p.maxStaff + ' staff' : 'unlimited staff'}</option>`).join(''); }
 function openNewShop() {
     ['nCode', 'nName', 'nOwner', 'nPhone', 'nEmail'].forEach(i => $(i).value = '');
     $('nPlan').innerHTML = planOptions(plans()[0].id); nPlanChanged();
@@ -720,7 +755,7 @@ async function createShop() {
         const b = db.batch();
         const tr = db.collection('tenants').doc(code);
         b.set(tr, {
-            name, type: ($('nType') && $('nType').value) || 'shop', planId: plan.id, plan: plan.name, monthlyFee: fee, limits: { maxStaff: Number(plan.maxStaff) || 0, maxProducts: Number(plan.maxProducts) || 0 },
+            name, type: ($('nType') && $('nType').value) || 'shop', planId: plan.id, plan: plan.name, monthlyFee: fee, limits: planLimits(plan), services: planServices(plan),
             status: 'active', trial, paidUntil: TS(until), lockAt: TS(trial ? addDays(until, Number(V.config.graceDays) || 0) : addDays(until, 1)),
             txnCount: 0, ownerName, ownerEmail, ownerPhone: ownerPhone || null, ownerUid, usageReady: true, createdAt: FV.serverTimestamp()
         });
@@ -813,7 +848,7 @@ async function saveEdit() {
         if (phone && ownerUid) b.set(db.collection('logins').doc(phone), { email, shop: id, uid: ownerUid });
         b.update(tr, {
             name, ownerName, ownerEmail: email, ownerPhone: phone || null, ownerUid: ownerUid || null,
-            planId: plan.id, plan: plan.name, monthlyFee: fee, limits: { maxStaff: Number(plan.maxStaff) || 0, maxProducts: Number(plan.maxProducts) || 0 }
+            planId: plan.id, plan: plan.name, monthlyFee: fee, limits: planLimits(plan), services: planServices(plan)
         });
         await b.commit();
         if (emailChanged) { await auth.sendPasswordResetEmail(email, { url: 'https://keep.co.tz/' }); closeSheets(); await afterInvite({ ...t, name, ownerName, ownerEmail: email, ownerPhone: phone }, false); }
@@ -979,19 +1014,35 @@ function fillSettings() {
     $('planRows').innerHTML = plans().map(planRow).join('');
     $('cfTrial').value = c.trialDays; $('cfGrace').value = c.graceDays; $('cfPayHow').value = c.payHow || '';
     $('cfPhone').value = c.supportPhone || ''; $('cfTill').value = c.tillUrl || ''; $('cfBiz').value = c.bizLine || '';
+    const ad = { ...DEFAULT_CONFIG.addons, ...(c.addons || {}) };
+    $('adStaff').value = ad.extraStaffPrice; $('adTopN').value = ad.topupReceipts; $('adTopP').value = ad.topupPrice;
 }
-const planRow = p => `<div class="plan-row" data-id="${esc(p.id || '')}">
+async function saveAddons() {
+    const addons = { extraStaffPrice: Number($('adStaff').value) || 0, topupReceipts: Number($('adTopN').value) || 0, topupPrice: Number($('adTopP').value) || 0 };
+    await db.collection('platform').doc('config').set({ addons }, { merge: true }).then(() => toast('✅ Add-ons saved')).catch(e => toast(e.message, 'err'));
+}
+const opt = (val, cur, label) => `<option value="${val}" ${val === cur ? 'selected' : ''}>${label}</option>`;
+const planRow = p => { const sv = planServices(p); return `<div class="plan-row" data-id="${esc(p.id || '')}">
     <div class="pn"><label>Plan name</label><input data-k="name" value="${esc(p.name)}" placeholder="e.g. Business"></div>
     <div><label>Price / month</label><input data-k="price" type="number" inputmode="numeric" value="${p.price || 0}"></div>
-    <div><label>Max staff</label><input data-k="maxStaff" type="number" inputmode="numeric" value="${p.maxStaff || 0}"></div>
-    <div><label>Max items</label><input data-k="maxProducts" type="number" inputmode="numeric" value="${p.maxProducts || 0}"></div>
-    <button class="tiny" style="color:var(--red);padding:9px;" title="Remove plan" onclick="this.parentElement.remove()">✕</button></div>`;
-function addPlanRow() { $('planRows').insertAdjacentHTML('beforeend', planRow({ name: '', price: 0, maxStaff: 0, maxProducts: 0 })); }
+    <div><label>Staff logins</label><input data-k="maxStaff" type="number" inputmode="numeric" value="${p.maxStaff || 0}"></div>
+    <div><label>Items</label><input data-k="maxProducts" type="number" inputmode="numeric" value="${p.maxProducts || 0}"></div>
+    <button class="tiny" style="color:var(--red);padding:9px;" title="Remove plan" onclick="this.parentElement.remove()">✕</button>
+    <div class="svc">
+        <div><label>Daily report</label><select data-k="dailyReport">${opt('off', sv.dailyReport, 'Off')}${opt('text', sv.dailyReport, 'WhatsApp text')}${opt('pdf', sv.dailyReport, 'WhatsApp PDF')}</select></div>
+        <div><label>Receipts</label><select data-k="receipts">${opt('manual', sv.receipts, 'Manual button only')}${opt('text', sv.receipts, 'Automatic text')}${opt('pdf', sv.receipts, 'Automatic PDF')}</select></div>
+        <div><label>Receipts / month</label><input data-k="receiptQuota" type="number" inputmode="numeric" value="${sv.receiptQuota || 0}"></div>
+        <label class="ck"><input type="checkbox" data-k="debtReminders" ${sv.debtReminders ? 'checked' : ''}> Debt reminders</label>
+        <label class="ck"><input type="checkbox" data-k="alerts" ${sv.alerts ? 'checked' : ''}> Stock & cash-up alerts</label>
+    </div></div>`; };
+function addPlanRow() { $('planRows').insertAdjacentHTML('beforeend', planRow({ name: '', price: 0, maxStaff: 0, maxProducts: 0, services: SVC_DEFAULT })); }
 async function savePlans() {
     const rows = [...document.querySelectorAll('#planRows .plan-row')].map(r => {
         const v = k => r.querySelector(`[data-k=${k}]`).value.trim();
         const name = v('name');
-        return { id: r.dataset.id || name.toLowerCase().replace(/[^a-z0-9]+/g, '-'), name, price: Number(v('price')) || 0, maxStaff: Number(v('maxStaff')) || 0, maxProducts: Number(v('maxProducts')) || 0 };
+        const ck = k => r.querySelector(`[data-k=${k}]`).checked;
+        return { id: r.dataset.id || name.toLowerCase().replace(/[^a-z0-9]+/g, '-'), name, price: Number(v('price')) || 0, maxStaff: Number(v('maxStaff')) || 0, maxProducts: Number(v('maxProducts')) || 0,
+            services: { dailyReport: v('dailyReport'), receipts: v('receipts'), receiptQuota: v('receipts') === 'manual' ? 0 : Number(v('receiptQuota')) || 0, debtReminders: ck('debtReminders'), alerts: ck('alerts') } };
     }).filter(p => p.name);
     if (!rows.length) return toast('Keep at least one plan.', 'err');
     await db.collection('platform').doc('config').set({ plans: rows }, { merge: true }).then(() => toast('✅ Plans saved. Existing shops keep their fee until you change their plan.')).catch(e => toast(e.message, 'err'));
