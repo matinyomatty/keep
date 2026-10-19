@@ -427,7 +427,7 @@ a.btn{display:grid;place-items:center;text-decoration:none}
       await startFirebase();
       const email = await emailFor(id);
       if (isSeller(email)) { say(msg, 'Ask the business owner for a new setup code. They can make one from Team → Reset PIN.'); return; }
-      await auth.sendPasswordResetEmail(email);
+      await auth.sendPasswordResetEmail(email, { url: 'https://keep.co.tz/' });
       say(msg, 'We sent a reset link to your email. Check spam too.', true);
     } catch (err) { say(msg, friendly(err)); }
   };

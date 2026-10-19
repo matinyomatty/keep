@@ -436,7 +436,7 @@ async function doLogin() {
 async function forgotPass() {
     const e = $('lgEmail').value.trim();
     if (!e) { $('loginError').textContent = 'Type your email first.'; return; }
-    await auth.sendPasswordResetEmail(e).catch(() => {});
+    await auth.sendPasswordResetEmail(e, { url: 'https://keep.co.tz/' }).catch(() => {});
     $('loginError').style.color = 'var(--green)'; $('loginError').textContent = 'Reset link sent — check your email.';
 }
 auth.onAuthStateChanged(async user => {
@@ -729,7 +729,7 @@ async function createShop() {
         b.set(tr.collection('plan').doc('usage'), { staff: { [ownerUid]: true }, products: {}, updatedAt: FV.serverTimestamp() });
         if (ownerPhone) b.set(db.collection('logins').doc(ownerPhone), { email: ownerEmail, shop: code, uid: ownerUid });
         await b.commit();
-        await auth.sendPasswordResetEmail(ownerEmail);
+        await auth.sendPasswordResetEmail(ownerEmail, { url: 'https://keep.co.tz/' });
         closeSheets();
         const t = { id: code, name, ownerName, ownerEmail, ownerPhone };
         if (!trial) { toast('✅ Shop created — now record the first payment'); setTimeout(() => openPay(code), 400); }
@@ -763,7 +763,7 @@ async function resendPin(id) {
     const t = V.tenants.find(x => x.id === id);
     if (!t.ownerEmail) return toast('No owner email on record — edit the shop to add one.', 'err');
     if (!await dialog(`Email <b>${esc(t.ownerName || 'the owner')}</b> a new "set your PIN" link at <b>${esc(t.ownerEmail)}</b>?`, { yes: 'Send' })) return;
-    try { await auth.sendPasswordResetEmail(t.ownerEmail); await afterInvite(t, false); } catch (e) { toast(e.message, 'err'); }
+    try { await auth.sendPasswordResetEmail(t.ownerEmail, { url: 'https://keep.co.tz/' }); await afterInvite(t, false); } catch (e) { toast(e.message, 'err'); }
 }
 
 // ════════════════════════════════════════════════
@@ -816,7 +816,7 @@ async function saveEdit() {
             planId: plan.id, plan: plan.name, monthlyFee: fee, limits: { maxStaff: Number(plan.maxStaff) || 0, maxProducts: Number(plan.maxProducts) || 0 }
         });
         await b.commit();
-        if (emailChanged) { await auth.sendPasswordResetEmail(email); closeSheets(); await afterInvite({ ...t, name, ownerName, ownerEmail: email, ownerPhone: phone }, false); }
+        if (emailChanged) { await auth.sendPasswordResetEmail(email, { url: 'https://keep.co.tz/' }); closeSheets(); await afterInvite({ ...t, name, ownerName, ownerEmail: email, ownerPhone: phone }, false); }
         else { closeSheets(); toast('✅ Saved'); }
     } catch (e) {
         toast((e.code || '').includes('email-already-in-use') ? 'That email already has a Keep account.' : e.message, 'err');

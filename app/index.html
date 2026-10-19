@@ -1716,7 +1716,7 @@ async function forgotPin() {
     try {
         const { email, owner } = await resolveLogin(id);
         if (!owner) return loginError('Ask your shop owner to reset your PIN — they can do it from 👥 Team.');
-        await auth.sendPasswordResetEmail(email);
+        await auth.sendPasswordResetEmail(email, { url: 'https://keep.co.tz/' });
         loginError(`📧 We sent a link to ${maskEmail(email)}. Open it to set a new PIN (check spam too).`, true);
     } catch (e) {
         loginError(e.code === 'auth/user-not-found' ? 'No account uses that email.' : (e.message || 'Could not send the reset email.'));
@@ -5164,7 +5164,7 @@ async function resetStaffPin(uid) {
     if (!navigator.onLine) return toast('⚠️ Resetting a PIN needs internet.', 'err');
     if ((p.loginId || '').includes('@')) {
         if (!await showConfirm(`Email <b>${esc(p.name)}</b> a link to set a new PIN?<br><span style="font-size:0.78rem;color:#6b7280;">${esc(maskEmail(p.loginId))}</span>`, 'Send email', 'var(--blue)')) return;
-        return auth.sendPasswordResetEmail(p.loginId).then(() => toast('📧 Reset email sent')).catch(e => toast('⚠️ ' + friendlyErr(e), 'err'));
+        return auth.sendPasswordResetEmail(p.loginId, { url: 'https://keep.co.tz/' }).then(() => toast('📧 Reset email sent')).catch(e => toast('⚠️ ' + friendlyErr(e), 'err'));
     }
     if (!await showConfirm(`Reset <b>${esc(p.name)}</b>'s PIN?<br><span style="font-size:0.78rem;color:#6b7280;">Their old PIN stops working. You get a new setup code to send them, and they choose a new PIN themselves.</span>`, 'Reset PIN', 'var(--blue)')) return;
     const code = newSetupCode();
