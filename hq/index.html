@@ -280,7 +280,9 @@
     <div class="fg"><span class="fl">Start with</span>
         <select id="nStart"><option value="trial">Free trial</option><option value="paid">Paid — I'll record the first payment now</option></select></div>
     <span class="section-label" style="margin-top:6px;">Shop owner</span>
-    <div class="hint">They get an email with a link to set their own PIN, then add their sellers from the till.</div>
+    <label style="display:flex;gap:8px;align-items:flex-start;font-size:.8rem;margin:2px 0 10px;"><input type="checkbox" id="nBranch" onchange="nBranchChanged()" style="margin-top:2px;"><span><b>This owner already uses Keep</b> — add this as another branch. They sign in with their usual phone/email and PIN and switch between branches in the till.</span></label>
+    <div class="fg hidden" id="nBranchWrap"><span class="fl">Their existing shop</span><select id="nBranchOf" onchange="nBranchPick()"></select></div>
+    <div class="hint" id="nOwnerHint">They get an email with a link to set their own PIN, then add their sellers from the till.</div>
     <div class="fr">
         <div class="fg"><span class="fl">Owner's name</span><input type="text" id="nOwner" placeholder="e.g. Asha Mohamed"></div>
         <div class="fg"><span class="fl">Phone (optional)</span><input type="tel" id="nPhone" placeholder="07XX XXX XXX"></div>
@@ -732,11 +734,25 @@ async function addFreeDays(id) {
 // ════════════════════════════════════════════════
 function planOptions(sel) { return plans().map(p => `<option value="${esc(p.id)}" ${p.id === sel ? 'selected' : ''}>${esc(p.name)} — ${n0(p.price)} · ${p.maxStaff ? p.maxStaff + ' staff' : 'unlimited staff'}</option>`).join(''); }
 function openNewShop() {
-    ['nCode', 'nName', 'nOwner', 'nPhone', 'nEmail'].forEach(i => $(i).value = '');
+    ['nCode', 'nName', 'nOwner', 'nPhone', 'nEmail'].forEach(i => { $(i).value = ''; $(i).readOnly = false; });
+    $('nBranch').checked = false; $('nBranchWrap').classList.add('hidden');
     $('nPlan').innerHTML = planOptions(plans()[0].id); nPlanChanged();
     $('nStart').value = 'trial'; $('nStart').options[0].textContent = `Free trial — ${V.config.trialDays || 0} days`;
     $('nErr').classList.add('hidden');
     openSheet('shNew');
+}
+function nBranchChanged() {
+    const on = $('nBranch').checked;
+    $('nBranchWrap').classList.toggle('hidden', !on);
+    $('nOwnerHint').textContent = on ? 'No new login is made. The owner sees this branch in the till straight away.' : 'They get an email with a link to set their own PIN, then add their sellers from the till.';
+    if (on) {
+        $('nBranchOf').innerHTML = '<option value="">— choose —</option>' + V.tenants.filter(t => t.ownerUid).map(t => `<option value="${esc(t.id)}">${esc(t.name || t.id)} · ${esc(t.ownerName || '')}</option>`).join('');
+    }
+    ['nOwner', 'nPhone', 'nEmail'].forEach(i => $(i).readOnly = on);
+}
+function nBranchPick() {
+    const t = V.tenants.find(x => x.id === $('nBranchOf').value);
+    $('nOwner').value = t ? t.ownerName || '' : ''; $('nEmail').value = t ? t.ownerEmail || '' : ''; $('nPhone').value = t && t.ownerPhone ? '0' + String(t.ownerPhone).slice(-9) : '';
 }
 function nPlanChanged() { const p = planById($('nPlan').value); if (p) $('nFee').value = p.price; }
 async function createShop() {
@@ -749,11 +765,13 @@ async function createShop() {
     if (!name) return err('Enter the business name.');
     if (!ownerName) return err("Enter the owner's name.");
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(ownerEmail)) return err("Enter the owner's email.");
+    const branchOf = $('nBranch').checked ? V.tenants.find(x => x.id === $('nBranchOf').value) : null;
+    if ($('nBranch').checked && !branchOf) return err('Choose the shop this owner already has.');
     if (ownerPhone && !/^\d{10,15}$/.test(ownerPhone)) return err('Phone number looks wrong — e.g. 0712 345 678.');
     const btn = $('nBtn'); btn.disabled = true; btn.textContent = 'Creating...';
     try {
-        if (ownerPhone && (await db.collection('logins').doc(ownerPhone).get()).exists) return err('That phone number is already used by another account.');
-        const ownerUid = await makeOwnerLogin(ownerEmail, name);
+        if (!branchOf && ownerPhone && (await db.collection('logins').doc(ownerPhone).get()).exists) return err('That phone number is already used by another account. If it is the same owner, tick "This owner already uses Keep".');
+        const ownerUid = branchOf ? branchOf.ownerUid : await makeOwnerLogin(ownerEmail, name);
         const trial = $('nStart').value === 'trial';
         const until = trial ? addDays(new Date(), Number(V.config.trialDays) || 0) : new Date();
         const b = db.batch();
@@ -764,10 +782,25 @@ async function createShop() {
             txnCount: 0, ownerName, ownerEmail, ownerPhone: ownerPhone || null, ownerUid, usageReady: true, createdAt: FV.serverTimestamp()
         });
         b.set(tr.collection('staff').doc(ownerUid), { name: ownerName, loginId: ownerEmail, role: 'admin', active: true, createdAt: FV.serverTimestamp(), createdBy: 'Keep' });
-        b.set(db.collection('users').doc(ownerUid), { shop: code });
+        if (branchOf) {
+            // Same login, one more shop: the till lists every shop in "shops" and lets the owner switch.
+            const u = (await db.collection('users').doc(ownerUid).get()).data() || {};
+            const shops = { ...(u.shops || {}), [u.shop || branchOf.id]: (u.shops || {})[u.shop || branchOf.id] || (V.tenants.find(x => x.id === (u.shop || branchOf.id)) || {}).name || branchOf.name, [code]: name };
+            b.set(db.collection('users').doc(ownerUid), { shop: u.shop || branchOf.id, shops }, { merge: true });
+        } else b.set(db.collection('users').doc(ownerUid), { shop: code });
         b.set(tr.collection('plan').doc('usage'), { staff: { [ownerUid]: true }, products: {}, updatedAt: FV.serverTimestamp() });
-        if (ownerPhone) b.set(db.collection('logins').doc(ownerPhone), { email: ownerEmail, shop: code, uid: ownerUid });
+        if (ownerPhone && !branchOf) b.set(db.collection('logins').doc(ownerPhone), { email: ownerEmail, shop: code, uid: ownerUid });
         await b.commit();
+        if (branchOf) {
+            closeSheets();
+            const t = { id: code, name, ownerName, ownerEmail, ownerPhone };
+            if (!trial) { toast('✅ Branch created — now record the first payment'); setTimeout(() => openPay(code), 400); return; }
+            if (ownerPhone && await dialog(`✅ <b>${esc(name)}</b> is ready as another branch for ${esc(ownerName)}.<br><br>Tell them on WhatsApp?`, { yes: '📲 WhatsApp', no: 'Not now', color: 'var(--pos)' })) {
+                const text = `Habari ${ownerName.split(' ')[0]}! Your new branch *${name}* is ready on Keep.\n\nSign in as usual at ${V.config.tillUrl || 'https://keep.co.tz/'} — then tap your name at the top → *Switch branch*.`;
+                window.open(`https://wa.me/${ownerPhone}?text=${encodeURIComponent(text)}`, '_blank');
+            }
+            return;
+        }
         await auth.sendPasswordResetEmail(ownerEmail, { url: 'https://keep.co.tz/' });
         closeSheets();
         const t = { id: code, name, ownerName, ownerEmail, ownerPhone };
@@ -882,7 +915,13 @@ async function deleteShop(id) {
         const logins = await db.collection('logins').where('shop', '==', id).get();
         const b = db.batch();
         logins.docs.forEach(d => b.delete(d.ref));
-        staff.docs.forEach(d => b.delete(db.collection('users').doc(d.id)));
+        for (const d of staff.docs) {
+            const uref = db.collection('users').doc(d.id), u = (await uref.get()).data();
+            const others = u && u.shops ? Object.keys(u.shops).filter(k => k !== id) : [];
+            if (!others.length) { b.delete(uref); continue; }
+            const shops = { ...u.shops }; delete shops[id];
+            b.set(uref, { shop: u.shop === id ? others[0] : u.shop, shops }, { merge: false });
+        }
         b.delete(tr);
         await b.commit();
         closeSheets();

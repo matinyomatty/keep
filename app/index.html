@@ -800,6 +800,7 @@
                 <button class="hdr-chip yellow" onclick="openDeliveries()"><i>🚚</i>DELIVERY</button>
                 <button class="hdr-chip" onclick="openStocktake()"><i>📋</i>COUNT</button>
                 <button class="hdr-chip role-admin" onclick="openImport()"><i>📥</i>EXCEL</button>
+                <button class="hdr-chip role-admin" onclick="openLabels()"><i>🏷️</i>LABELS</button>
                 <button class="hdr-chip yellow role-admin" onclick="openItem()"><i>➕</i>ADD ITEM</button>
             </div>
         </div>
@@ -877,10 +878,31 @@
             <div class="field-group"><span class="field-label">Warranty (months)</span><input type="number" id="itemWarranty" inputmode="numeric" placeholder="0 = none"></div>
             <div class="field-group" style="display:flex;align-items:flex-end;"><label class="check" style="padding:0 0 10px;"><input type="checkbox" id="itemSerial"><span>Ask for serial / IMEI when selling</span></label></div>
         </div>
+        <div class="field-group"><span class="field-label">Expiry date (optional) — the soonest on the shelf</span><input type="date" id="itemExpiry"></div>
         <div class="field-group"><span class="field-label">Barcode (optional)</span><div style="display:flex;gap:6px;"><input type="text" id="itemBarcode" inputmode="numeric" placeholder="Scan or type the code on the pack"><button class="btn-sec" style="flex:none;" onclick="scanItemBarcode()">📷</button></div></div>
         <div class="save-bar">
             <button class="primary-cta" onclick="saveItem()">SAVE ITEM</button>
             <button class="btn-sec wide ghost" style="color:var(--red);" id="itemDeleteBtn" onclick="deleteItem()">DELETE ITEM</button>
+            <button class="btn-sec wide ghost" onclick="closeModals()">CANCEL</button>
+        </div>
+    </div>
+</div>
+
+<!-- Shelf labels -->
+<div class="modal-overlay" id="sheetLabels" onclick="overlayClose(event)">
+    <div class="modal">
+        <div class="modal-handle"></div>
+        <div class="modal-title">🏷️ Shelf labels</div>
+        <div class="hint gray" style="margin-bottom:10px;">Choose the items to print labels for. Items without a barcode get one made for them, so they can be scanned at the till.</div>
+        <div class="search-wrap" style="margin-bottom:8px;"><span class="search-icon">🔍</span><input type="text" id="lblSearch" placeholder="Find item..." oninput="filterLabels()"></div>
+        <div style="display:flex;gap:8px;margin-bottom:8px;"><button class="btn-sec" onclick="labelsAll(true)">Select all</button><button class="btn-sec" onclick="labelsAll(false)">Clear</button></div>
+        <div id="lblList" style="max-height:42vh;overflow:auto;border:1px solid #e5e7eb;border-radius:12px;"></div>
+        <div class="form-row" style="margin-top:12px;">
+            <div class="field-group"><span class="field-label">Label size</span><select id="lblSize"><option value="s">Small (65 per A4 page)</option><option value="l">Large (24 per A4 page)</option></select></div>
+            <div class="field-group" style="display:flex;align-items:flex-end;"><label class="check" style="padding:0 0 10px;"><input type="checkbox" id="lblPrice" checked><span>Show price</span></label></div>
+        </div>
+        <div class="save-bar">
+            <button class="primary-cta" id="lblBtn" onclick="printLabels()">PRINT LABELS</button>
             <button class="btn-sec wide ghost" onclick="closeModals()">CANCEL</button>
         </div>
     </div>
@@ -904,6 +926,7 @@
             <div id="restockSerialInfo" style="font-size:.74rem;color:var(--gray);margin-bottom:12px;"></div>
         </div>
         <div class="role-admin">
+            <div class="field-group"><span class="field-label">Expiry date of this stock (optional)</span><input type="date" id="restockExpiry"></div>
             <div class="field-group"><span class="field-label" id="lblRestockCost">Cost per piece (TZS)</span><input type="number" id="restockCost" inputmode="decimal" placeholder="0" oninput="restockTotal()"></div>
             <div class="field-group">
                 <span class="field-label">Payment for this stock</span>
@@ -1414,6 +1437,8 @@
     </div>
 </div>
 
+<script src="../lang.js"></script>
+<script src="../lang-sw.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
@@ -1452,7 +1477,7 @@ const ENTRY_COLORS = {
 
 firebase.initializeApp(firebaseConfig);
 // App version — shown on the sign-in screen and saved on each sale, so you can tell when every till has updated.
-const APP_VERSION = 25;
+const APP_VERSION = 26;
 // App Check: proves requests come from the real Keep app, not a script. Paste your reCAPTCHA v3 SITE key
 // between the quotes to switch it on (see the setup guide). Empty = off.
 const APP_CHECK_SITE_KEY = '';
@@ -1775,7 +1800,10 @@ auth.onAuthStateChanged(async user => {
     try {
         const link = await db.collection('users').doc(user.uid).get();
         if (!link.exists || !link.data().shop) return rejectLogin('This login is not linked to any shop. Contact Keep support.');
-        S.tenant = link.data().shop;
+        // Owners with several branches: open the branch they used last on this device.
+        S.branches = link.data().shops || null;
+        let pick = null; try { pick = localStorage.getItem('keep.branch.' + user.uid); } catch (e) {}
+        S.tenant = S.branches && pick && S.branches[pick] ? pick : link.data().shop;
         const [tSnap, stSnap] = await Promise.all([tRef().get(), col('staff').doc(user.uid).get()]);
         if (!tSnap.exists) return rejectLogin('Shop not found. Contact Keep support.');
         if (!stSnap.exists) return rejectLogin('Your staff account is not set up. Ask the shop owner.');
@@ -2404,9 +2432,27 @@ function renderLastSale() {
 // ════════════════════════════════════════════════
 //  STOCK
 // ════════════════════════════════════════════════
+// Expiry: days left until the soonest expiry date on the shelf (null = no date set or nothing in stock).
+const EXPIRY_WARN_DAYS = 30;
+function daysToExpiry(p) {
+    if (!p || !p.expiry || (Number(p.stock) || 0) <= 0) return null;
+    const d = new Date(p.expiry + 'T00:00:00'), t = new Date(); t.setHours(0, 0, 0, 0);
+    return Math.round((d - t) / 86400000);
+}
+function expiringItems() {
+    return S.products.map(p => ({ p, d: daysToExpiry(p) })).filter(x => x.d !== null && x.d <= EXPIRY_WARN_DAYS).sort((a, b) => a.d - b.d);
+}
+function expiryTxt(d) {
+    if (d === null) return '';
+    if (d < 0) return tl(`Expired ${-d} day${d === -1 ? '' : 's'} ago`);
+    if (d === 0) return tl('Expires today');
+    return tl(`Expires in ${d} day${d === 1 ? '' : 's'}`);
+}
+function filterExpiring() { S.invFilter = S.invFilter === 'exp' ? '' : 'exp'; renderInventory(); }
 function renderInventory() {
     if (!S.me) return;
     const P = S.products;
+    const expN = expiringItems().length;
     const low = P.filter(p => p.stock > 0 && p.stock <= (Number(p.reorderLevel) || 5)).length;
     const out = P.filter(p => (Number(p.stock) || 0) <= 0).length;
     const value = P.reduce((s, p) => s + (S.costs[p.id] || 0) * Math.max(0, Number(p.stock) || 0), 0);
@@ -2414,6 +2460,7 @@ function renderInventory() {
         <div class="inv-strip-card"><h4>Items</h4><p>${P.length}</p></div>
         <div class="inv-strip-card ${low ? 'alert' : ''}"><h4>Low stock</h4><p>${low}</p></div>
         <div class="inv-strip-card ${out ? 'alert' : ''}"><h4>Out of stock</h4><p>${out}</p></div>
+        ${expN || S.invFilter === 'exp' ? `<div class="inv-strip-card alert" style="cursor:pointer;${S.invFilter === 'exp' ? 'outline:2px solid var(--red);' : ''}" onclick="filterExpiring()"><h4>⏳ Expiring</h4><p>${expN}</p></div>` : ''}
         ${isAdmin() ? `<div class="inv-strip-card"><h4>Stock value (cost)</h4><p style="font-size:0.74rem;">${fmt(value)}</p></div>` : ''}`;
 
     const raw = ($('invSearch').value || '').trim(), q = raw.toLowerCase();
@@ -2422,8 +2469,11 @@ function renderInventory() {
         const hay = [p.name, p.category, p.emoji, p.sellPrice, p.stock, p.barcode].join(' ').toLowerCase();
         return words.every(w => hay.includes(w));
     });
-    if (!q) list = [...list].sort((a, b) => (a.stock || 0) - (b.stock || 0));
-    $('invLabel').textContent = !q ? 'All stock items · lowest first' : list.length ? `"${raw}" — ${list.length} item${list.length > 1 ? 's' : ''}` : `Nothing found for "${raw}"`;
+    if (S.invFilter === 'exp') {
+        const ids = new Set(expiringItems().map(x => x.p.id));
+        list = list.filter(p => ids.has(p.id)).sort((a, b) => daysToExpiry(a) - daysToExpiry(b));
+    } else if (!q) list = [...list].sort((a, b) => (a.stock || 0) - (b.stock || 0));
+    $('invLabel').textContent = S.invFilter === 'exp' ? tl('Expired or expiring within 30 days') : !q ? 'All stock items · lowest first' : list.length ? `"${raw}" — ${list.length} item${list.length > 1 ? 's' : ''}` : `Nothing found for "${raw}"`;
     const box = $('invList');
     if (!P.length) {
         box.innerHTML = `<div class="empty-state"><div class="icon">📦</div>No items yet.${isAdmin() ? '<br>Tap <strong>+ ADD ITEM</strong> to get started.' : ''}</div>`;
@@ -2435,7 +2485,7 @@ function renderInventory() {
             <span class="inv-emoji">${esc(p.emoji || '📦')}</span>
             <div class="inv-info">
                 <div class="inv-name">${esc(p.name)}</div>
-                <div class="inv-detail">${esc(p.category || 'General')} · Sell ${n0(p.sellPrice)}${perUnit(p)}${isAdmin() ? ' · Cost ' + n0(S.costs[p.id] || 0) : ''}${p.trackSerial ? ` · 🔢 ${inStockSerials(p.id).length} serials` : ''}${p.warrantyMonths ? ' · 🛡️ ' + p.warrantyMonths + 'm' : ''}${p.packSize > 1 ? ' · ' + p.packSize + '/pack' : ''}</div>
+                <div class="inv-detail">${esc(p.category || 'General')} · Sell ${n0(p.sellPrice)}${perUnit(p)}${isAdmin() ? ' · Cost ' + n0(S.costs[p.id] || 0) : ''}${p.trackSerial ? ` · 🔢 ${inStockSerials(p.id).length} serials` : ''}${p.warrantyMonths ? ' · 🛡️ ' + p.warrantyMonths + 'm' : ''}${p.packSize > 1 ? ' · ' + p.packSize + '/pack' : ''}${(() => { const d = daysToExpiry(p); return d === null ? '' : ` · <span style="color:${d <= 0 ? 'var(--red)' : d <= EXPIRY_WARN_DAYS ? '#b45309' : 'inherit'};font-weight:${d <= EXPIRY_WARN_DAYS ? 800 : 400};">⏳ ${d <= EXPIRY_WARN_DAYS ? esc(expiryTxt(d)) : 'Exp ' + esc(p.expiry)}</span>`; })()}</div>
             </div>
             <div class="inv-stock"><b class="${isOut ? 'out' : isLow ? 'low' : ''}">${q3(st).toLocaleString('en-US')}</b><small>${unitOf(p) === 'pc' ? 'pcs' : unitShort(p)}</small></div>
             <div class="inv-actions">
@@ -2467,6 +2517,7 @@ function openItem(id) {
     $('itemStock').value = p ? (p.stock ?? '') : '';
     $('itemReorder').value = p ? (p.reorderLevel ?? 5) : '';
     $('itemBarcode').value = p ? (p.barcode || '') : '';
+    $('itemExpiry').value = p ? (p.expiry || '') : '';
     $('itemUnit').innerHTML = UNITS.map(([k, l]) => `<option value="${k}">${l}</option>`).join('');
     $('itemUnit').value = p ? unitOf(p) : 'pc';
     $('itemPart').checked = p ? partOk(p) : false;
@@ -2511,7 +2562,7 @@ function saveItem() {
     if (barcode && S.products.some(p => p.id !== id && p.barcode && normCode(p.barcode) === normCode(barcode))) return toast('⚠️ Another item already uses that barcode.', 'err');
     b.set(ref, { name, emoji: S.emoji, category: $('itemCat').value.trim() || 'General', sellPrice, stock, reorderLevel, barcode,
         unit: $('itemUnit').value, partQty: part, packSize: Math.max(0, Math.round(num($('itemPack').value))) || 0,
-        warrantyMonths: Math.max(0, Math.round(num($('itemWarranty').value))) || 0, trackSerial: serial, updatedAt: now() }, { merge: true });
+        warrantyMonths: Math.max(0, Math.round(num($('itemWarranty').value))) || 0, trackSerial: serial, expiry: $('itemExpiry').value || '', updatedAt: now() }, { merge: true });
     b.set(col('costs').doc(ref.id), { costPrice: cost, updatedAt: now() }, { merge: true });
     if (!id) usageAdd(b, 'products', ref.id);
     if (!before || (Number(before.stock) || 0) !== stock) {
@@ -2546,6 +2597,7 @@ function openRestock(id) {
     $('lblRestockCost').textContent = `Cost per ${unitOf(p) === 'pc' ? 'piece' : unitName(p)} (TZS)`;
     $('restockCost').value = S.costs[id] || '';
     $('restockPaid').value = '';
+    $('restockExpiry').value = '';
     const ser = !!p.trackSerial;
     $('restockSerialWrap').classList.toggle('hidden', !ser);
     $('restockInWrap').classList.toggle('hidden', ser);
@@ -2575,9 +2627,13 @@ function confirmRestock() {
     if (paid && cost <= 0) return toast('⚠️ Enter the cost per unit to record the payment.', 'err');
     const day = dayStr();
     const b = db.batch(), mv = col('movements').doc();
-    b.update(col('products').doc(id), { stock: inc(qty), src: src('movements', mv.id), updatedAt: now() });
+    const pu = { stock: inc(qty), src: src('movements', mv.id), updatedAt: now() };
+    const exp = isAdmin() ? $('restockExpiry').value : '';
+    // Keep the soonest date on the shelf; if the old stock had run out, the new batch's date takes over.
+    if (exp) pu.expiry = (!p.expiry || (Number(p.stock) || 0) <= 0 || exp < p.expiry) ? exp : p.expiry;
+    b.update(col('products').doc(id), pu);
     b.set(mv, {
-        productId: id, name: p.name, type: 'restock', qty, unitCost: isAdmin() ? cost : null,
+        productId: id, name: p.name, type: 'restock', qty, unitCost: isAdmin() ? cost : null, expiry: exp || null,
         day, staffUid: S.me.uid, staffName: S.me.name, createdAt: now()
     });
     if (isAdmin() && cost > 0) b.set(col('costs').doc(id), { costPrice: cost, updatedAt: now() }, { merge: true });
@@ -3177,6 +3233,7 @@ const REPORTS = [
     { g: 'Money', id: 'cashups', icon: '🧮', t: 'Cash-ups', d: 'Each seller\'s counts, shortages and overs' },
     { g: 'Stock', id: 'stockList', icon: '🏷️', t: 'Stock list & value', d: 'Every item with stock, cost, price and value', now: true },
     { g: 'Stock', id: 'reorder', icon: '⚠️', t: 'Low & out of stock', d: 'What to buy next', now: true },
+    { g: 'Stock', id: 'expiry', icon: '⏳', t: 'Expiry dates', d: 'Expired items and items expiring soon', now: true },
     { g: 'Stock', id: 'stocking', icon: '🚚', t: 'Stock received', d: 'Deliveries and restocks with what was paid' },
     { g: 'Stock', id: 'movements', icon: '🔁', t: 'Stock movements', d: 'Restocks, counts, edits and returns' },
     { g: 'Stock', id: 'serials', icon: '🔢', t: 'Serial / IMEI register', d: 'Every serial: in stock, sold, warranty', now: true },
@@ -3314,6 +3371,15 @@ async function buildReport(id) {
             r.summary = [['Out of stock', L.filter(p => st(p) === 'Out of stock').length], ['Low', L.filter(p => st(p) === 'Low').length], ['Cost to restock to 2× reorder level (est.)', Math.round(sum(L, p => Math.max(0, 2 * (Number(p.reorderLevel) || 5) - Math.max(0, p.stock)) * (S.costs[p.id] || 0)))]];
             T('Reorder list', ['Item', 'Category', 'In stock', 'Reorder at', 'Suggested order', 'Cost each', 'Status'], L.map(p => [p.name, p.category || '', q3(p.stock || 0), Number(p.reorderLevel) || 5, Math.max(0, 2 * (Number(p.reorderLevel) || 5) - Math.max(0, Number(p.stock) || 0)), S.costs[p.id] || 0, st(p)]));
         }
+        return r;
+    }
+    if (id === 'expiry') {
+        const L = S.products.map(p => ({ p, d: daysToExpiry(p) })).filter(x => x.d !== null).sort((a, b) => a.d - b.d);
+        const st = d => d < 0 ? 'Expired' : d <= EXPIRY_WARN_DAYS ? 'Expiring soon' : 'OK';
+        r.summary = [['Expired', L.filter(x => x.d < 0).length], ['Expiring within 30 days', L.filter(x => x.d >= 0 && x.d <= EXPIRY_WARN_DAYS).length],
+            ['Value at cost (expired + expiring)', Math.round(sum(L.filter(x => x.d <= EXPIRY_WARN_DAYS), x => Math.max(0, x.p.stock) * (S.costs[x.p.id] || 0)))]];
+        T('Expiry dates', ['Item', 'Category', 'In stock', 'Expiry date', 'Days left', 'Value at cost', 'Status'],
+            L.map(({ p, d }) => [p.name, p.category || '', q3(p.stock || 0), p.expiry, d, Math.round(Math.max(0, p.stock) * (S.costs[p.id] || 0)), st(d)]));
         return r;
     }
     if (id === 'stocking' || id === 'movements') {
@@ -4465,6 +4531,7 @@ function confirmCloseDay() {
     const profit = x.sales - x.supplier - x.expense;
     const outItems = S.products.filter(p => (Number(p.stock) || 0) <= 0);
     const lowItems = S.products.filter(p => p.stock > 0 && p.stock <= (Number(p.reorderLevel) || 5));
+    const expItems = expiringItems();
     const isToday = d === dayStr();
 
     const cus = S.cdCashups || [];
@@ -4518,7 +4585,8 @@ function confirmCloseDay() {
             <div style="background:${outItems.length ? '#fff5f5' : '#f0fdf4'};"><b style="color:${outItems.length ? 'var(--red)' : 'var(--green)'};">${outItems.length}</b><small>Out of stock</small></div>
             <div style="background:#fffbeb;"><b style="color:var(--amber);">${lowItems.length}</b><small>Low stock</small></div>
         </div>
-        ${outItems.length ? `<div class="hint amber" style="background:#fff5f5;color:var(--red);">🚨 Out of stock: ${esc(outItems.slice(0, 6).map(p => p.name).join(', '))}${outItems.length > 6 ? ' +more' : ''}</div>` : ''}`;
+        ${outItems.length ? `<div class="hint amber" style="background:#fff5f5;color:var(--red);">🚨 Out of stock: ${esc(outItems.slice(0, 6).map(p => p.name).join(', '))}${outItems.length > 6 ? ' +more' : ''}</div>` : ''}
+        ${expItems.length ? `<div class="hint amber">⏳ Expired or expiring soon: ${esc(expItems.slice(0, 6).map(x => x.p.name).join(', '))}${expItems.length > 6 ? ' +more' : ''}</div>` : ''}`;
 
     S.closeDayMsg = `🏪 *${(S.tenantInfo.name || S.tenant).toUpperCase()}* — ${prettyDay(d)}
 
@@ -4532,7 +4600,7 @@ function confirmCloseDay() {
 💵 Cash balance: ${n0(bal.cash)}
 📱 Mobile balance: ${n0(bal.mobile)}${recon.length ? '\n\n' + recon.join('\n') : ''}${cuLines.length ? '\n\n🧾 Cash-ups\n' + cuLines.join('\n') + (cuShort ? `\nTotal short: ${n0(-cuShort)}` : '') : ''}
 
-🧾 ${x.tx} POS sales${outItems.length ? `\n🚨 Out of stock: ${outItems.length} items` : ''}${lowItems.length ? `\n⚠️ Low stock: ${lowItems.length} items` : ''}
+🧾 ${x.tx} POS sales${outItems.length ? `\n🚨 Out of stock: ${outItems.length} items` : ''}${lowItems.length ? `\n⚠️ Low stock: ${lowItems.length} items` : ''}${expItems.length ? `\n⏳ Expiring soon: ${expItems.length} items` : ''}
 Closed by ${S.me.name}`;
 
     $('cdStep1').classList.add('hidden'); $('cdStep2').classList.remove('hidden');
@@ -5240,6 +5308,24 @@ function toggleRole(uid) {
 // ── My account menu (tap your name in the header) ──
 function closeMeMenu() { const m = document.getElementById('meMenu'); if (m) m.remove(); document.removeEventListener('click', meOutside, true); }
 function meOutside(e) { const m = document.getElementById('meMenu'); if (m && !m.contains(e.target)) closeMeMenu(); }
+async function switchBranch() {
+    const list = Object.entries(S.branches || {}).sort((a, b) => String(a[1]).localeCompare(String(b[1])));
+    if (list.length < 2) return;
+    const pick = await choose(tl('Which branch?'), list.map(([id, name]) => [id, (id === S.tenant ? '✓ ' : '🏪 ') + esc(name), id === S.tenant ? '#0b0d12' : '#1a56db']));
+    if (!pick || pick === S.tenant) return;
+    if (await unsyncedCount() && !await showConfirm(tl('Some sales or changes have not reached the internet yet.') + '<br><br>' + tl('Switch branch anyway? They will still be sent.'))) return;
+    if (Object.keys(S.cart || {}).length && !await showConfirm(tl('There are items in the cart. Switch branch anyway?'))) return;
+    try { localStorage.setItem('keep.branch.' + S.me.uid, pick); } catch (e) {}
+    try {
+        const t = (await db.collection('tenants').doc(pick).get()).data() || {};
+        if (t.type === 'barbershop') { location.href = '../barber/'; return; }
+    } catch (e) {}
+    location.reload();
+}
+async function switchLang() {
+    if (Object.keys(S.cart || {}).length && !await showConfirm(tl('There are items in the cart. Switch language anyway?'))) return;
+    KeepLang.set(KeepLang.lang === 'sw' ? 'en' : 'sw');
+}
 function openMeMenu(ev) {
     ev.stopPropagation();
     if (document.getElementById('meMenu')) return closeMeMenu();
@@ -5254,6 +5340,8 @@ function openMeMenu(ev) {
         <button onclick="closeMeMenu();openPin()">${ic('<rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>')}Change my PIN</button>
         ${isAdmin() ? `<button onclick="closeMeMenu();openTeam()">${ic('<circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1.03 1.56V21a2 2 0 1 1-4 0v-.09A1.7 1.7 0 0 0 8.9 19.4a1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.56-1.03H3a2 2 0 1 1 0-4h.09A1.7 1.7 0 0 0 4.6 8.9a1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 8.9 4.6 1.7 1.7 0 0 0 9.93 3.04V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1.03 1.56 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.4 8.9a1.7 1.7 0 0 0 1.56 1.03H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.51 1.07z"/>')}Settings</button>` : ''}
         <a href="help.html" onclick="closeMeMenu()">${ic('<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/><path d="M5.6 5.6l3.6 3.6M14.8 14.8l3.6 3.6M18.4 5.6l-3.6 3.6M9.2 14.8l-3.6 3.6"/>')}Help, guide &amp; FAQ</a>
+        ${S.branches && Object.keys(S.branches).length > 1 ? `<button onclick="closeMeMenu();switchBranch()">${ic('<path d="M3 21V9l9-6 9 6v12"/><path d="M9 21v-7h6v7"/>')}Switch branch</button>` : ''}
+        <button class="notr" onclick="closeMeMenu();switchLang()">${ic('<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/>')}${KeepLang.lang === 'sw' ? 'English' : 'Kiswahili'}</button>
         <button onclick="closeMeMenu();forceUpdate()">${ic('<path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/>')}Refresh app</button>
         <button class="mm-out" onclick="closeMeMenu();logout()">${ic('<path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3"/><path d="M10 17l-5-5 5-5M5 12h11"/>')}Sign out</button>`;
     document.body.appendChild(m);
@@ -5319,8 +5407,20 @@ const IMPORT_COLS = [
     ['packSize', 'Pack size', 10, ['pack size', 'pack', 'per pack', 'per box']],
     ['warrantyMonths', 'Warranty months', 15, ['warranty months', 'warranty', 'dhamana']],
     ['trackSerial', 'Serial required', 14, ['serial required', 'serial', 'imei', 'serial/imei']],
+    ['expiry', 'Expiry date', 12, ['expiry date', 'expiry', 'expires', 'exp', 'best before', 'tarehe ya kuisha', 'mwisho wa matumizi']],
     ['emoji', 'Icon', 6, ['icon', 'emoji']]
 ];
+// Excel gives dates as day numbers, text like 31/12/2026 or 2026-12-31, or real dates.
+function cellDate(v) {
+    if (v === null || v === undefined || v === '') return null;
+    const iso = d => isNaN(d) ? undefined : `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    if (v instanceof Date) return iso(v);
+    if (typeof v === 'number') return iso(new Date(Math.round((v - 25569) * 86400000) + new Date().getTimezoneOffset() * 60000));
+    const t = String(v).trim(); let m;
+    if ((m = t.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/))) return iso(new Date(+m[1], m[2] - 1, +m[3]));
+    if ((m = t.match(/^(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{2,4})$/))) return iso(new Date(m[3].length === 2 ? 2000 + +m[3] : +m[3], m[2] - 1, +m[1]));
+    return undefined;
+}
 const yesNo = v => { const t = String(v ?? '').trim().toLowerCase(); return t === '' ? null : ['yes', 'y', 'true', '1', 'ndiyo', 'ndio'].includes(t); };
 function unitKey(v) {
     const t = String(v ?? '').trim().toLowerCase(); if (!t) return null;
@@ -5337,6 +5437,85 @@ function loadScript(url, what = 'a tool') {
 }
 async function needXLSX() { if (!window.XLSX) await loadScript(XLSX_URL, 'the Excel tool'); return window.XLSX; }
 
+// ════════════════════════════════════════════════
+//  SHELF LABELS  (name, price and barcode, printed on A4 label sheets)
+// ════════════════════════════════════════════════
+const BARCODE_URL = 'https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.11.6/JsBarcode.all.min.js';
+function openLabels() {
+    if (!isAdmin()) return;
+    $('lblSearch').value = '';
+    const P = [...S.products].sort((a, b) => (a.category || '').localeCompare(b.category || '') || (a.name || '').localeCompare(b.name || ''));
+    $('lblList').innerHTML = P.map(p => `
+        <label class="lbl-line" data-name="${esc((p.name + ' ' + (p.category || '') + ' ' + (p.barcode || '')).toLowerCase())}" style="display:flex;align-items:center;gap:10px;padding:9px 12px;border-bottom:1px solid #f1f2f4;">
+            <input type="checkbox" data-id="${p.id}" style="width:20px;height:20px;flex:none;">
+            <span style="flex:1;min-width:0;"><b class="notr" style="display:block;font-size:.84rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(p.emoji || '📦')} ${esc(p.name)}</b>
+                <small style="color:var(--gray);font-size:.7rem;">${n0(p.sellPrice)} TZS · ${p.barcode ? esc(p.barcode) : tl('no barcode yet')}</small></span>
+            <input type="number" inputmode="numeric" min="1" value="1" data-qty="${p.id}" title="${esc(tl('How many of each'))}" style="width:58px;flex:none;text-align:center;">
+        </label>`).join('') || `<div class="empty-state">${tl('No items yet')}</div>`;
+    openSheet('sheetLabels');
+    needBarcode().catch(() => {});
+}
+function filterLabels() {
+    const q = $('lblSearch').value.trim().toLowerCase();
+    document.querySelectorAll('#lblList .lbl-line').forEach(r => r.style.display = !q || r.dataset.name.includes(q) ? 'flex' : 'none');
+}
+function labelsAll(on) { document.querySelectorAll('#lblList .lbl-line').forEach(r => { if (r.style.display !== 'none') r.querySelector('input[type=checkbox]').checked = on; }); }
+async function needBarcode() { if (!window.JsBarcode) await loadScript(BARCODE_URL, 'the barcode tool'); return window.JsBarcode; }
+// In-store EAN-13 codes start with 20–29, so they never clash with codes printed by manufacturers.
+function newStoreCode() {
+    const used = new Set(S.products.map(p => normCode(p.barcode || '')));
+    for (;;) {
+        let d = '20'; for (let i = 0; i < 10; i++) d += Math.floor(Math.random() * 10);
+        const sum = [...d].reduce((a, c, i) => a + (+c) * (i % 2 ? 3 : 1), 0);
+        const code = d + ((10 - sum % 10) % 10);
+        if (!used.has(normCode(code))) return code;
+    }
+}
+function barcodeImage(JB, code) {
+    const c = document.createElement('canvas');
+    const fmt = /^\d{13}$/.test(code) ? 'EAN13' : /^\d{12}$/.test(code) ? 'UPC' : /^\d{8}$/.test(code) ? 'EAN8' : 'CODE128';
+    try { JB(c, code, { format: fmt, displayValue: true, fontSize: 18, margin: 4, height: 60, width: 2 }); }
+    catch (e) { JB(c, code, { format: 'CODE128', displayValue: true, fontSize: 18, margin: 4, height: 60, width: 2 }); }
+    return { url: c.toDataURL('image/png'), ratio: c.width / c.height };
+}
+async function printLabels() {
+    const picks = [...document.querySelectorAll('#lblList input[type=checkbox]:checked')].map(i => ({ p: productById(i.dataset.id), n: Math.max(1, Math.min(500, Math.round(num(document.querySelector(`[data-qty="${i.dataset.id}"]`).value)) || 1)) })).filter(x => x.p);
+    if (!picks.length) return toast('⚠️ Choose at least one item.', 'err');
+    if (!window.jspdf) return toast('PDF tool did not load — check your connection.', 'err');
+    let JB; try { JB = await needBarcode(); } catch (e) { return toast('⚠️ ' + e.message, 'err'); }
+    // Give a barcode to items that have none, and save it so the till can scan it.
+    const fresh = picks.filter(x => !x.p.barcode);
+    if (fresh.length) {
+        const b = db.batch();
+        fresh.forEach(x => { const code = newStoreCode(); x.p.barcode = code; b.set(col('products').doc(x.p.id), { barcode: code, updatedAt: now() }, { merge: true }); });
+        commit(b);
+    }
+    const small = $('lblSize').value === 's', showPrice = $('lblPrice').checked;
+    const L = small ? { cols: 5, rows: 13, w: 38.1, h: 21.2, left: 4.7, top: 10.7, gx: 2.5, gy: 0 } : { cols: 3, rows: 8, w: 70, h: 37, left: 0, top: 0, gx: 0, gy: 0 };
+    const { jsPDF } = window.jspdf, doc = new jsPDF({ unit: 'mm', format: 'a4' });
+    const shop = (S.tenantInfo.name || '').toUpperCase(), cache = {};
+    let k = 0;
+    picks.forEach(({ p, n }) => {
+        for (let c = 0; c < n; c++) {
+            if (k && k % (L.cols * L.rows) === 0) doc.addPage();
+            const i = k % (L.cols * L.rows), x = L.left + (i % L.cols) * (L.w + L.gx), y = L.top + Math.floor(i / L.cols) * (L.h + L.gy), pad = small ? 1.5 : 3;
+            let ty = y + pad + (small ? 2.2 : 3.2);
+            if (!small && shop) { doc.setFont('helvetica', 'normal'); doc.setFontSize(6.5); doc.setTextColor(110); doc.text(shop, x + pad, ty); ty += 3.6; }
+            doc.setTextColor(0); doc.setFont('helvetica', 'bold'); doc.setFontSize(small ? 6.8 : 9.5);
+            const lines = doc.splitTextToSize(p.name || '', L.w - pad * 2).slice(0, small ? 1 : 2);
+            doc.text(lines, x + pad, ty); ty += lines.length * (small ? 2.6 : 3.8);
+            if (showPrice) { doc.setFontSize(small ? 8.5 : 13); doc.text(`TZS ${n0(p.sellPrice)}${perUnit(p)}`, x + pad, ty + (small ? 0.6 : 1.4)); ty += small ? 1.6 : 3.2; }
+            const img = cache[p.barcode] || (cache[p.barcode] = barcodeImage(JB, p.barcode));
+            const bh = y + L.h - pad - ty - 0.5, bw = Math.min(L.w - pad * 2, bh * img.ratio);
+            if (bh > 4) doc.addImage(img.url, 'PNG', x + (L.w - bw) / 2, ty + 0.5, bw, bh);
+            k++;
+        }
+    });
+    doc.save(`${(S.tenantInfo.name || 'Keep').replace(/[^\w\-]+/g, '_')}_labels_${dayStr()}.pdf`);
+    closeModals();
+    toast(`🏷️ ${tl('Labels downloaded')} · ${k}`);
+}
+
 function openImport() {
     if (!isAdmin()) return;
     $('impStep1').classList.remove('hidden'); $('impStep2').classList.add('hidden');
@@ -5350,11 +5529,11 @@ async function downloadTemplate(withStock) {
     const head = IMPORT_COLS.map(c => c[1]);
     const rows = withStock && S.products.length
         ? S.products.map(p => [p.name, p.category || '', Number(p.sellPrice) || 0, S.costs[p.id] ?? '', q3(p.stock), Number(p.reorderLevel) || 5, p.barcode || '',
-            unitOf(p), partOk(p) ? 'yes' : 'no', p.packSize || '', p.warrantyMonths || '', p.trackSerial ? 'yes' : 'no', p.emoji || ''])
-        : [['Example: Samsung A15 phone', 'Phones', 420000, 360000, 6, 2, '', 'pc', 'no', '', 12, 'yes', '📱'],
-           ['Example: Bosch drill GSB 550', 'Power tools', 185000, 150000, 4, 1, '3165140601324', 'pc', 'no', '', 6, 'yes', '🔧'],
-           ['Example: Electric cable 2.5mm', 'Electrical', 2500, 1800, 300, 50, '', 'm', 'yes', 100, '', 'no', '🔌'],
-           ['Example: Wood screws 1 inch', 'Hardware', 150, 90, 2400, 200, '', 'pc', 'no', 100, '', 'no', '🔩']];
+            unitOf(p), partOk(p) ? 'yes' : 'no', p.packSize || '', p.warrantyMonths || '', p.trackSerial ? 'yes' : 'no', p.expiry || '', p.emoji || ''])
+        : [['Example: Samsung A15 phone', 'Phones', 420000, 360000, 6, 2, '', 'pc', 'no', '', 12, 'yes', '', '📱'],
+           ['Example: Bosch drill GSB 550', 'Power tools', 185000, 150000, 4, 1, '3165140601324', 'pc', 'no', '', 6, 'yes', '', '🔧'],
+           ['Example: Electric cable 2.5mm', 'Electrical', 2500, 1800, 300, 50, '', 'm', 'yes', 100, '', 'no', '', '🔌'],
+           ['Example: Panadol 500mg (box)', 'Pharmacy', 3000, 2200, 40, 10, '', 'box', 'no', '', '', 'no', '2027-06-30', '💊']];
     const ws = X.utils.aoa_to_sheet([head, ...rows]);
     ws['!cols'] = IMPORT_COLS.map(c => ({ wch: c[2] }));
     ws['!autofilter'] = { ref: `A1:M${rows.length + 1}` };
@@ -5416,7 +5595,7 @@ async function readImportFile(input) {
                 line: hIdx + i + 2, name, category: String(g('category') ?? '').trim(),
                 sellPrice: cellNum(g('sellPrice')), cost: cellNum(g('cost')), stock: cellNum(g('stock')),
                 reorderLevel: cellNum(g('reorderLevel')), barcode: String(g('barcode') ?? '').trim().replace(/\.0$/, ''), emoji: validEmoji(String(g('emoji') ?? '').trim()),
-                unit: unitKey(g('unit')), partQty: yesNo(g('partQty')), packSize: cellNum(g('packSize')), warrantyMonths: cellNum(g('warrantyMonths')), trackSerial: yesNo(g('trackSerial'))
+                unit: unitKey(g('unit')), partQty: yesNo(g('partQty')), packSize: cellNum(g('packSize')), warrantyMonths: cellNum(g('warrantyMonths')), trackSerial: yesNo(g('trackSerial')), expiry: cellDate(g('expiry'))
             });
         });
         if (!rows.length) throw new Error('The file has no item rows.');
@@ -5440,6 +5619,7 @@ function planImport() {
         if (!r.name) out.errors.push('no name');
         if (seen[key]) out.errors.push(`same name as line ${seen[key]}`); else if (r.name) seen[key] = r.line;
         if (r.unit === undefined) out.errors.push('unknown unit');
+        if (r.expiry === undefined) out.errors.push('expiry date not understood (use 31/12/2026)');
         if (r.trackSerial && (r.partQty || PART_UNITS.includes(r.unit || ''))) out.errors.push('serial items must be sold in whole units');
         ['sellPrice', 'cost', 'stock', 'reorderLevel', 'packSize', 'warrantyMonths'].forEach(k => { if (Number.isNaN(r[k])) out.errors.push(`${k === 'sellPrice' ? 'sell price' : k === 'reorderLevel' ? 'warn below' : k} is not a number`); else if (r[k] !== null && r[k] < 0) out.errors.push('negative number'); });
         const match = (r.barcode && byCode[r.barcode]) || byName[key];
@@ -5518,7 +5698,7 @@ async function runImport() {
                     Object.assign(d, { name: x.name, category: x.category || 'General', sellPrice: x.sellPrice, stock: x.newStock,
                         reorderLevel: x.reorderLevel !== null ? q3(x.reorderLevel) : 5, barcode: x.barcode || '', emoji: x.emoji || '📦',
                         unit: x.unit || 'pc', partQty: x.partQty ?? PART_UNITS.includes(x.unit || 'pc'), packSize: Math.round(x.packSize || 0),
-                        warrantyMonths: Math.round(x.warrantyMonths || 0), trackSerial: !!x.trackSerial });
+                        warrantyMonths: Math.round(x.warrantyMonths || 0), trackSerial: !!x.trackSerial, expiry: x.expiry || '' });
                     added++; newIds.push(ref.id);
                 } else {
                     if (x.category) d.category = x.category;
@@ -5529,6 +5709,7 @@ async function runImport() {
                     if (x.packSize !== null) d.packSize = Math.round(x.packSize);
                     if (x.warrantyMonths !== null) d.warrantyMonths = Math.round(x.warrantyMonths);
                     if (x.trackSerial !== null) d.trackSerial = x.trackSerial;
+                    if (x.expiry) d.expiry = x.expiry;
                     if (x.barcode) d.barcode = x.barcode;
                     if (x.emoji) d.emoji = x.emoji;
                     if (x.newStock !== x.oldStock) d.stock = x.newStock;
