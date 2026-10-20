@@ -1,7 +1,7 @@
 // Matinyo POS — keeps the app opening when the internet is down.
 // Sales themselves are stored offline by Firebase; this file only caches the app's own files.
-const CACHE = 'keep-app-v26';
-const SHELL = ['./', './index.html', './icon-192.png', './icon-512.png', '../lang.js', '../lang-sw.js'];
+const CACHE = 'keep-app-v27';
+const SHELL = ['./', './index.html', './icon-192.png', './icon-512.png', '../lang.js', '../lang-sw.js', '../env.js'];
 
 self.addEventListener('install', e => {
     e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));
@@ -21,7 +21,7 @@ self.addEventListener('fetch', e => {
     if (url.hostname.includes('googleapis.com') || url.hostname.includes('firebaseio.com')) return;
 
     // The app page: try the network first so updates arrive, fall back to the saved copy.
-    if (req.mode === 'navigate' || url.pathname.endsWith('.html') || /\/lang(-\w+)?\.js$/.test(url.pathname)) {
+    if (req.mode === 'navigate' || url.pathname.endsWith('.html') || /\/(lang(-\w+)?|env)\.js$/.test(url.pathname)) {
         e.respondWith(fetch(req)
             .then(res => { const copy = res.clone(); caches.open(CACHE).then(c => c.put(req, copy)); return res; })
             .catch(() => caches.match(req).then(r => r || caches.match('./index.html'))));

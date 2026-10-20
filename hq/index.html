@@ -154,6 +154,7 @@
             <button class="tab active" data-p="overview" onclick="go('overview')"><span>📊</span>Overview</button>
             <button class="tab" data-p="shops" onclick="go('shops')"><span>🏪</span>Shops</button>
             <button class="tab" data-p="payments" onclick="go('payments')"><span>💳</span>Payments</button>
+            <button class="tab" data-p="health" onclick="go('health')"><span>🩺</span>Health<b id="hBadge" style="display:none;margin-left:4px;background:var(--red);color:#fff;border-radius:9px;padding:0 6px;font-size:.62rem;"></b></button>
             <button class="tab" data-p="settings" onclick="go('settings')"><span>⚙️</span>Settings</button>
         </div>
     </div>
@@ -182,6 +183,14 @@
                 <div class="card" id="activity"></div>
             </div>
         </div>
+    </div>
+
+    <!-- HEALTH -->
+    <div class="page" id="p-health">
+        <span class="section-label">Problems · last 7 days</span>
+        <div class="card" id="hProblems"><div class="empty">Loading…</div></div>
+        <span class="section-label">Tills · app version and last seen</span>
+        <div class="card" id="hTills"><div class="empty">Loading…</div></div>
     </div>
 
     <!-- SHOPS -->
@@ -331,6 +340,7 @@
     <button class="btn ghost" style="width:100%;margin-top:6px;" onclick="closeSheets()">CANCEL</button>
 </div></div>
 
+<script src="../env.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
@@ -339,15 +349,7 @@
 // ════════════════════════════════════════════════
 //  SETUP
 // ════════════════════════════════════════════════
-const firebaseConfig = {
-    apiKey: "AIzaSyCaDZILjLrWg2VGvFElzU08Je-kJTGHKiU",
-    authDomain: "matinyopos.firebaseapp.com",
-    projectId: "matinyopos",
-    storageBucket: "matinyopos.firebasestorage.app",
-    messagingSenderId: "891386548810",
-    appId: "1:891386548810:web:26f1ef407a053a3f6f4cb3",
-    measurementId: "G-FSDR5WGPFD"
-};
+const firebaseConfig = window.KEEP_ENV.firebaseConfig;   // live or test — see /env.js
 firebase.initializeApp(firebaseConfig);
 const auth = firebase.auth();
 const db = firebase.firestore();
@@ -367,7 +369,7 @@ const DEFAULT_CONFIG = {
     addons: { extraStaffPrice: 2000, topupReceipts: 250, topupPrice: 5000 },
     trialDays: 14, graceDays: 3,
     payHow: 'Lipa kwa M-Pesa. Reference: your shop code.',
-    supportPhone: '', tillUrl: 'https://keep.co.tz/', bizLine: 'Matinyo · Zanzibar, Tanzania'
+    supportPhone: '', tillUrl: window.KEEP_ENV.site, bizLine: 'Matinyo · Zanzibar, Tanzania'
 };
 
 const V = { tenants: [], payments: [], announcements: [], config: { ...DEFAULT_CONFIG }, filter: 'all', unsubs: [], openShop: null };
@@ -476,7 +478,7 @@ async function doLogin() {
 async function forgotPass() {
     const e = $('lgEmail').value.trim();
     if (!e) { $('loginError').textContent = 'Type your email first.'; return; }
-    await auth.sendPasswordResetEmail(e, { url: 'https://keep.co.tz/' }).catch(() => {});
+    await auth.sendPasswordResetEmail(e, { url: window.KEEP_ENV.site }).catch(() => {});
     $('loginError').style.color = 'var(--green)'; $('loginError').textContent = 'Reset link sent — check your email.';
 }
 auth.onAuthStateChanged(async user => {
@@ -530,6 +532,10 @@ function start() {
         renderAll();
         if (V.openShop) renderShopDetail(V.openShop, true);
     }, err));
+    V.errors = []; V.pings = [];
+    const wk = TS(new Date(Date.now() - 7 * 864e5)), quiet = e => { console.warn('health', e); renderHealth(e); };
+    V.unsubs.push(db.collection('errors').where('at', '>=', wk).onSnapshot(s => { V.errors = s.docs.map(d => ({ id: d.id, ...d.data() })); renderHealth(); }, quiet));
+    V.unsubs.push(db.collection('pings').onSnapshot(s => { V.pings = s.docs.map(d => ({ id: d.id, ...d.data() })); renderHealth(); }, quiet));
     V.unsubs.push(db.collection('announcements').onSnapshot(s => {
         V.announcements = s.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => (ms(b.createdAt) || 9e15) - (ms(a.createdAt) || 9e15));
         renderAnnouncements();
@@ -542,6 +548,36 @@ function go(p) {
     window.scrollTo(0, 0);
 }
 function renderAll() { renderOverview(); renderShops(); renderPayments(); }
+
+// ════════════════════════════════════════════════
+//  HEALTH
+// ════════════════════════════════════════════════
+function renderHealth(err) {
+    if (err) { $('hProblems').innerHTML = $('hTills').innerHTML = `<div class="empty">Can't read health reports yet — publish Firestore rules v23.</div>`; return; }
+    const shopName = id => (V.tenants.find(t => t.id === id) || {}).name || id;
+    const latest = Math.max(0, ...V.pings.map(p => Number(p.appV) || 0));
+    // Problems grouped by message
+    const g = {};
+    V.errors.forEach(e => { const k = e.msg || '?'; (g[k] = g[k] || { msg: k, n: 0, shops: new Set(), last: 0, e }).n++; g[k].shops.add(e.shop); if (ms(e.at) > g[k].last) { g[k].last = ms(e.at); g[k].e = e; } });
+    const G = Object.values(g).sort((a, b) => b.last - a.last);
+    const badge = $('hBadge'); badge.textContent = G.length; badge.style.display = G.length ? 'inline' : 'none';
+    $('hProblems').innerHTML = G.length ? G.map(x => `
+        <details class="line" style="display:block;">
+            <summary style="cursor:pointer;list-style:none;display:flex;justify-content:space-between;gap:10px;">
+                <div class="l"><div style="font-weight:800;word-break:break-word;">${esc(x.msg)}</div>
+                <div class="meta">${[...x.shops].map(s => esc(shopName(s))).join(', ')} · ${esc(x.e.kind || '')} · v${esc(x.e.appV || '?')} · ${esc(x.e.name || '')} · ${new Date(x.last).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</div></div>
+                <span class="chip ${x.n > 2 ? 'red' : 'amber'}">${x.n}×</span></summary>
+            <pre style="white-space:pre-wrap;font-size:.68rem;color:#6b7280;margin:8px 0 0;">${esc([x.e.note, x.e.screen, x.e.online === false ? 'offline' : '', x.e.ua, x.e.stack].filter(Boolean).join('\n'))}</pre>
+        </details>`).join('') : '<div class="empty">✅ No problems reported in the last 7 days.</div>';
+    // Tills
+    const P = [...V.pings].sort((a, b) => shopName(a.shop).localeCompare(shopName(b.shop)) || (ms(b.at) || 0) - (ms(a.at) || 0));
+    $('hTills').innerHTML = P.length ? P.map(p => {
+        const old = (Number(p.appV) || 0) < latest, days = ms(p.at) ? Math.floor((Date.now() - ms(p.at)) / 864e5) : null;
+        return `<div class="line"><div class="l"><div style="font-weight:800;">${esc(shopName(p.shop))} · ${esc(p.name || '')}</div>
+            <div class="meta">${esc(p.role === 'admin' ? 'Owner/admin' : 'Seller')} · ${p.lang === 'sw' ? 'Kiswahili' : 'English'} · last seen ${days === null ? '—' : days === 0 ? 'today' : days + ' day' + (days > 1 ? 's' : '') + ' ago'}</div></div>
+            <span class="chip ${old ? 'amber' : 'green'}" title="${old ? 'Not on the newest version — ask them to refresh' : 'Up to date'}">v${esc(p.appV || '?')}</span></div>`;
+    }).join('') : '<div class="empty">No tills have reported yet. They appear after their next sign-in.</div>';
+}
 
 // ════════════════════════════════════════════════
 //  OVERVIEW
@@ -801,7 +837,7 @@ async function createShop() {
             }
             return;
         }
-        await auth.sendPasswordResetEmail(ownerEmail, { url: 'https://keep.co.tz/' });
+        await auth.sendPasswordResetEmail(ownerEmail, { url: window.KEEP_ENV.site });
         closeSheets();
         const t = { id: code, name, ownerName, ownerEmail, ownerPhone };
         if (!trial) { toast('✅ Shop created — now record the first payment'); setTimeout(() => openPay(code), 400); }
@@ -835,7 +871,7 @@ async function resendPin(id) {
     const t = V.tenants.find(x => x.id === id);
     if (!t.ownerEmail) return toast('No owner email on record — edit the shop to add one.', 'err');
     if (!await dialog(`Email <b>${esc(t.ownerName || 'the owner')}</b> a new "set your PIN" link at <b>${esc(t.ownerEmail)}</b>?`, { yes: 'Send' })) return;
-    try { await auth.sendPasswordResetEmail(t.ownerEmail, { url: 'https://keep.co.tz/' }); await afterInvite(t, false); } catch (e) { toast(e.message, 'err'); }
+    try { await auth.sendPasswordResetEmail(t.ownerEmail, { url: window.KEEP_ENV.site }); await afterInvite(t, false); } catch (e) { toast(e.message, 'err'); }
 }
 
 // ════════════════════════════════════════════════
@@ -888,7 +924,7 @@ async function saveEdit() {
             planId: plan.id, plan: plan.name, monthlyFee: fee, limits: planLimits(plan), services: planServices(plan)
         });
         await b.commit();
-        if (emailChanged) { await auth.sendPasswordResetEmail(email, { url: 'https://keep.co.tz/' }); closeSheets(); await afterInvite({ ...t, name, ownerName, ownerEmail: email, ownerPhone: phone }, false); }
+        if (emailChanged) { await auth.sendPasswordResetEmail(email, { url: window.KEEP_ENV.site }); closeSheets(); await afterInvite({ ...t, name, ownerName, ownerEmail: email, ownerPhone: phone }, false); }
         else { closeSheets(); toast('✅ Saved'); }
     } catch (e) {
         toast((e.code || '').includes('email-already-in-use') ? 'That email already has a Keep account.' : e.message, 'err');

@@ -1437,6 +1437,7 @@
     </div>
 </div>
 
+<script src="../env.js"></script>
 <script src="../lang.js"></script>
 <script src="../lang-sw.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
@@ -1450,15 +1451,7 @@
 // ════════════════════════════════════════════════
 //  CONFIG
 // ════════════════════════════════════════════════
-const firebaseConfig = {
-    apiKey: "AIzaSyCaDZILjLrWg2VGvFElzU08Je-kJTGHKiU",
-    authDomain: "matinyopos.firebaseapp.com",
-    projectId: "matinyopos",
-    storageBucket: "matinyopos.firebasestorage.app",
-    messagingSenderId: "891386548810",
-    appId: "1:891386548810:web:26f1ef407a053a3f6f4cb3",
-    measurementId: "G-FSDR5WGPFD"
-};
+const firebaseConfig = window.KEEP_ENV.firebaseConfig;   // live or test — see /env.js
 // Sellers' hidden logins live on this domain. Nobody types it — they use their phone number.
 const SHOP_DOMAIN = 'tenants.matinyopos.app';
 const IDLE_LIMIT = 10 * 60 * 1000; // sign out after 10 minutes without a tap
@@ -1477,7 +1470,7 @@ const ENTRY_COLORS = {
 
 firebase.initializeApp(firebaseConfig);
 // App version — shown on the sign-in screen and saved on each sale, so you can tell when every till has updated.
-const APP_VERSION = 26;
+const APP_VERSION = 27;
 // App Check: proves requests come from the real Keep app, not a script. Paste your reCAPTCHA v3 SITE key
 // between the quotes to switch it on (see the setup guide). Empty = off.
 const APP_CHECK_SITE_KEY = '';
@@ -1567,12 +1560,47 @@ function commit(batch, okMsg, what) {
     const p = batch.commit()
         .catch(err => {
             console.error(err); toast('⚠️ Not saved: ' + friendlyErr(err), 'err');
+            reportProblem('save', err, what && what.label);
             if (what) { const l = failedSaves(); l.push({ ...what, at: Date.now(), by: S.me ? S.me.name : '', why: friendlyErr(err) }); sSet('matinyo.failed', JSON.stringify(l.slice(-30))); renderNotices(); }
             throw err;
         })
         .finally(() => { S.pending--; updatePending(); });
     if (okMsg) toast(okMsg);
     return p.catch(() => {});
+}
+// ════════════════════════════════════════════════
+//  HEALTH: problems and app version, so Keep HQ sees trouble before the shop calls
+// ════════════════════════════════════════════════
+const RP_SENT = {};
+let rpCount = 0;
+function reportProblem(kind, err, note) {
+    try {
+        if (!S.me || !S.tenant || rpCount >= 8) return;
+        const msg = String((err && (err.code ? err.code + ': ' : '') + (err.message || err)) || 'unknown').slice(0, 300);
+        if (RP_SENT[msg]) return;
+        RP_SENT[msg] = 1; rpCount++;
+        db.collection('errors').add({
+            shop: S.tenant, uid: S.me.uid, name: S.me.name || '', kind: String(kind).slice(0, 20), msg,
+            stack: String((err && err.stack) || '').slice(0, 900), note: String(note || '').slice(0, 200),
+            appV: APP_VERSION, screen: (document.querySelector('.tab-page.active') || {}).id || '', online: navigator.onLine,
+            ua: navigator.userAgent.slice(0, 160), day: dayStr(), at: firebase.firestore.FieldValue.serverTimestamp()
+        }).catch(() => {});
+    } catch (e) {}
+}
+window.addEventListener('error', e => { if (e && e.message && !/ResizeObserver|Script error/.test(e.message)) reportProblem('crash', e.error || e.message, (e.filename || '').split('/').pop() + ':' + e.lineno); });
+window.addEventListener('unhandledrejection', e => reportProblem('promise', e.reason));
+// One small record per person per device: which version they run and when they were last seen.
+function pingHealth() {
+    try {
+        if (!S.me || !S.tenant) return;
+        const key = 'keep.ping.' + S.tenant + '.' + S.me.uid;
+        if (Date.now() - (Number(sGet(key)) || 0) < 3 * 3600e3) return;
+        sSet(key, String(Date.now()));
+        db.collection('pings').doc(S.tenant + '_' + S.me.uid).set({
+            shop: S.tenant, uid: S.me.uid, name: S.me.name || '', role: S.me.role, appV: APP_VERSION,
+            lang: (window.KeepLang && KeepLang.lang) || 'en', ua: navigator.userAgent.slice(0, 160), at: firebase.firestore.FieldValue.serverTimestamp()
+        }).catch(() => {});
+    } catch (e) {}
 }
 function failedSaves() { try { return JSON.parse(sGet('matinyo.failed') || '[]'); } catch (e) { return []; } }
 async function showFailedSaves() {
@@ -1746,7 +1774,7 @@ async function forgotPin() {
     try {
         const { email, owner } = await resolveLogin(id);
         if (!owner) return loginError('Ask your shop owner to reset your PIN — they can do it from 👥 Team.');
-        await auth.sendPasswordResetEmail(email, { url: 'https://keep.co.tz/' });
+        await auth.sendPasswordResetEmail(email, { url: window.KEEP_ENV.site });
         loginError(`📧 We sent a link to ${maskEmail(email)}. Open it to set a new PIN (check spam too).`, true);
     } catch (e) {
         loginError(e.code === 'auth/user-not-found' ? 'No account uses that email.' : (e.message || 'Could not send the reset email.'));
@@ -1858,6 +1886,7 @@ function enterApp() {
     touch();
     prewarmScanner();
     checkClock();
+    setTimeout(pingHealth, 4000);
 }
 async function checkClock() {
     try {
@@ -5265,7 +5294,7 @@ async function resetStaffPin(uid) {
     if (!navigator.onLine) return toast('⚠️ Resetting a PIN needs internet.', 'err');
     if ((p.loginId || '').includes('@')) {
         if (!await showConfirm(`Email <b>${esc(p.name)}</b> a link to set a new PIN?<br><span style="font-size:0.78rem;color:#6b7280;">${esc(maskEmail(p.loginId))}</span>`, 'Send email', 'var(--blue)')) return;
-        return auth.sendPasswordResetEmail(p.loginId, { url: 'https://keep.co.tz/' }).then(() => toast('📧 Reset email sent')).catch(e => toast('⚠️ ' + friendlyErr(e), 'err'));
+        return auth.sendPasswordResetEmail(p.loginId, { url: window.KEEP_ENV.site }).then(() => toast('📧 Reset email sent')).catch(e => toast('⚠️ ' + friendlyErr(e), 'err'));
     }
     if (!await showConfirm(`Reset <b>${esc(p.name)}</b>'s PIN?<br><span style="font-size:0.78rem;color:#6b7280;">Their old PIN stops working. You get a new setup code to send them, and they choose a new PIN themselves.</span>`, 'Reset PIN', 'var(--blue)')) return;
     const code = newSetupCode();
